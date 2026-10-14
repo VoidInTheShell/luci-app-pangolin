@@ -62,6 +62,7 @@ cd "$sdk_dir"
 # the duration of this process.
 temporary_signing_key="$sdk_dir/private-key.pem"
 rm -f "$temporary_signing_key"
+touch .config
 sed -i \
 	-e '/^CONFIG_SIGNED_PACKAGES=/d' \
 	-e '/^# CONFIG_SIGNED_PACKAGES is not set$/d' \

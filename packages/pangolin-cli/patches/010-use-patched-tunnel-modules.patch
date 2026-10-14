@@ -1,0 +1,9 @@
+--- a/go.mod
++++ b/go.mod
+@@ -132,3 +132,6 @@ require (
+ // replace github.com/fosrl/olm => ../olm
+ 
+ // replace github.com/fosrl/newt => ../newt
++
++replace github.com/fosrl/newt => ./third_party/newt
++replace github.com/fosrl/olm => ./third_party/olm

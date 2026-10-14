@@ -1,0 +1,13 @@
+{
+	"admin/services/pangolin": {
+		"title": "Pangolin",
+		"order": 74,
+		"action": {
+			"type": "view",
+			"path": "pangolin/overview"
+		},
+		"depends": {
+			"acl": [ "luci-app-pangolin" ]
+		}
+	}
+}

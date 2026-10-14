@@ -1,0 +1,54 @@
+#!/bin/sh
+set -eu
+
+db="${MOCK_UCI_DB:?MOCK_UCI_DB is required}"
+[ "${1:-}" != '-q' ] || shift
+action="${1:-}"
+[ "$#" -eq 0 ] || shift
+
+replace_key() {
+	key="$1"
+	value="$2"
+	tmp="${db}.tmp"
+	if [ -f "$db" ]; then
+		grep -v "^${key}=" "$db" > "$tmp" || true
+	else
+		: > "$tmp"
+	fi
+	printf '%s=%s\n' "$key" "$value" >> "$tmp"
+	mv "$tmp" "$db"
+}
+
+case "$action" in
+	get)
+		key="${1:?missing UCI key}"
+		[ -f "$db" ] || exit 1
+		line="$(grep "^${key}=" "$db" | tail -n 1 || true)"
+		[ -n "$line" ] || exit 1
+		printf '%s\n' "${line#*=}"
+		;;
+	set)
+		assignment="${1:?missing UCI assignment}"
+		replace_key "${assignment%%=*}" "${assignment#*=}"
+		;;
+	delete)
+		key="${1:?missing UCI key}"
+		tmp="${db}.tmp"
+		grep -v "^${key}=" "$db" > "$tmp" 2>/dev/null || true
+		mv "$tmp" "$db"
+		;;
+	changes)
+		config="${1:?missing UCI config}"
+		grep "^${config}\." "$db" 2>/dev/null || true
+		;;
+	commit)
+		;;
+	show)
+		prefix="${1:?missing UCI prefix}"
+		grep "^${prefix}\(?:=\|\.\)" "$db" 2>/dev/null || true
+		;;
+	*)
+		echo "Unsupported mock UCI action: $action" >&2
+		exit 2
+		;;
+esac

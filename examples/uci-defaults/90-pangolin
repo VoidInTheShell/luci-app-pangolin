@@ -1,0 +1,76 @@
+#!/bin/sh
+
+# First-boot configuration for an image that already contains
+# luci-app-pangolin (and therefore pangolin-cli).
+#
+# WARNING: values embedded in an image remain recoverable from that image.
+# Prefer a unique, short-lived provisioning key for unattended enrollment.
+
+PANGOLIN_ENDPOINT='https://pangolin.example.com'
+
+# Choose provisioning OR an existing Site ID/secret pair.
+NEWT_PROVISIONING_KEY=''
+NEWT_SITE_NAME=''
+NEWT_ID=''
+NEWT_SECRET=''
+
+# Experimental. Leave disabled for the supported userspace site connector.
+PANGOLIN_NATIVE_MAIN='0'
+
+case "$PANGOLIN_ENDPOINT" in
+	https://?*) ;;
+	*)
+		echo 'PANGOLIN_ENDPOINT must be a complete https:// URL.' >&2
+		exit 1
+		;;
+esac
+
+case "$PANGOLIN_NATIVE_MAIN" in 0|1) ;; *) exit 1 ;; esac
+
+if [ -n "$NEWT_PROVISIONING_KEY" ] &&
+   { [ -n "$NEWT_ID" ] || [ -n "$NEWT_SECRET" ]; }; then
+	echo 'Set a provisioning key OR an ID/secret pair, not both.' >&2
+	exit 1
+fi
+if { [ -n "$NEWT_ID" ] && [ -z "$NEWT_SECRET" ]; } ||
+   { [ -z "$NEWT_ID" ] && [ -n "$NEWT_SECRET" ]; }; then
+	echo 'NEWT_ID and NEWT_SECRET must be supplied together.' >&2
+	exit 1
+fi
+
+if [ -n "$NEWT_PROVISIONING_KEY" ] && [ -z "$NEWT_SITE_NAME" ]; then
+	NEWT_SITE_NAME="$(uci -q get system.@system[0].hostname || true)"
+	[ -n "$NEWT_SITE_NAME" ] || NEWT_SITE_NAME='openwrt-pangolin'
+fi
+
+if [ -z "$NEWT_PROVISIONING_KEY" ] && [ -z "$NEWT_ID" ]; then
+	uci -q set pangolin.main.endpoint="$PANGOLIN_ENDPOINT"
+	uci -q set pangolin.main.native_main="$PANGOLIN_NATIVE_MAIN"
+	uci -q set pangolin.main.enabled='0'
+	uci -q commit pangolin
+	chmod 0600 /etc/config/pangolin
+	/etc/init.d/pangolin enable
+	exit 0
+fi
+
+shell_quote() {
+	printf "'"
+	printf '%s' "$1" | sed "s/'/'\\\\''/g"
+	printf "'"
+}
+
+umask 077
+config_file='/tmp/pangolin-firstboot.env'
+{
+	printf 'PANGOLIN_ENDPOINT='; shell_quote "$PANGOLIN_ENDPOINT"; printf '\n'
+	printf 'NEWT_PROVISIONING_KEY='; shell_quote "$NEWT_PROVISIONING_KEY"; printf '\n'
+	printf 'NEWT_SITE_NAME='; shell_quote "$NEWT_SITE_NAME"; printf '\n'
+	printf 'NEWT_ID='; shell_quote "$NEWT_ID"; printf '\n'
+	printf 'NEWT_SECRET='; shell_quote "$NEWT_SECRET"; printf '\n'
+	printf 'PANGOLIN_NATIVE_MAIN='; shell_quote "$PANGOLIN_NATIVE_MAIN"; printf '\n'
+} > "$config_file"
+chmod 0600 "$config_file"
+/usr/libexec/configure-pangolin "$config_file"
+rm -f "$config_file"
+
+exit 0

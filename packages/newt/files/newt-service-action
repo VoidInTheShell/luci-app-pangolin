@@ -1,0 +1,14 @@
+#!/bin/sh
+
+# Keep service actions shell-free at the rpcd boundary while still returning
+# rc.common's diagnostic output to LuCI. The action is independently
+# allowlisted here in case this helper is ever called outside the RPC plugin.
+case "$1" in
+	start|stop|restart|enable|disable|enabled) ;;
+	*)
+		echo "Unsupported Newt service action: $1" >&2
+		exit 2
+		;;
+esac
+
+exec /etc/init.d/newt "$1" 2>&1

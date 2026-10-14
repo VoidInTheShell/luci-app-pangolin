@@ -1,69 +1,76 @@
-# Pangolin Newt for OpenWrt
+# Pangolin site connector for OpenWrt
 
-Native OpenWrt packaging and a LuCI management interface for
-[Fossorial Newt](https://github.com/fosrl/newt). Newt runs directly under
-`procd`; Docker is not required. Pangolin remains the control plane for sites,
-resources, targets, and access policy.
+Native OpenWrt packaging and LuCI management for the official
+[Pangolin CLI](https://github.com/fosrl/cli). The service executes
+`pangolin up site` directly under `procd`; Docker and systemd are not required.
 
-The current release targets the FriendlyElec NanoPi R5C:
+The LuCI app manages this router's site credentials, process, status, logs, and
+advanced connector settings. Pangolin remains the control plane for resources,
+targets, access policy, and clients. The legacy `newt`/`luci-app-newt` packages
+remain in the feed only for existing installations.
 
-| Component | Version |
+| Component | Pinned version |
 | --- | --- |
 | OpenWrt | 25.12.5 |
-| Target / package architecture | `rockchip/armv8` / `aarch64_generic` |
-| Newt | 1.18.1 |
+| R5C target / package architecture | `rockchip/armv8` / `aarch64_generic` |
+| Pangolin CLI | 0.18.1 |
+| Embedded Newt | 1.18.1 |
 | Package format | OpenWrt APK v3 |
-
-`luci-app-newt` depends on the architecture-specific `newt` package, so a
-normal feed install needs only one package name. The app provides credential or
-provisioning-key setup, boot control, `procd` supervision, connected status,
-sanitized logs, advanced Newt options, and package-managed updates.
 
 ## Install
 
-For the recommended signed-feed installation, direct LuCI upload, and package
-verification steps, see **[Installation](docs/INSTALLING.md)**.
+Add the signed package feed over SSH:
 
-For a custom NanoPi R5C image or a paste-ready Firmware Selector first-boot
-script, see **[Firmware Selector and ImageBuilder](docs/IMAGEBUILDER.md)**.
+```sh
+wget -O /tmp/openwrt-newt-public-key.pem \
+  https://github.com/alexanderjlynn/openwrt-newt/releases/latest/download/openwrt-newt-public-key.pem
+echo '54a584f2a271bddb263225be0ed7e972fd506529adcc03993a8e50bac32c7546  /tmp/openwrt-newt-public-key.pem' \
+  | sha256sum -c -
+cp /tmp/openwrt-newt-public-key.pem /etc/apk/keys/openwrt-newt-public-key.pem
+chmod 0644 /etc/apk/keys/openwrt-newt-public-key.pem
+echo 'https://github.com/alexanderjlynn/openwrt-newt/releases/latest/download/packages.adb' \
+  > /etc/apk/repositories.d/openwrt-newt.list
+apk update
+apk add luci-app-pangolin
+```
 
-After installation, open **Services → Pangolin Newt** in LuCI. The Pangolin
-endpoint is a complete HTTPS URL, for example
-`https://pangolin.example.com` or `https://pangolin.example.com:8443`.
+Then open **Services → Pangolin**, enter the endpoint plus the Site ID and
+secret shown by Pangolin, enable the connector, and save. The endpoint is an
+HTTPS URL; include `:port` only when Pangolin uses a non-default public port.
+
+The default and recommended connector uses Newt's userspace netstack, so it
+does not create an OpenWrt interface. The app exposes upstream `native-main`
+as an explicitly experimental option and can register its TUN with netifd and
+firewall4. Do not enable it merely for reverse proxying.
+
+See [installation and troubleshooting](docs/INSTALLING.md) for LuCI upload and
+verification. See [Firmware Selector and first boot](docs/IMAGEBUILDER.md) for
+a paste-ready `uci-defaults` script.
 
 ## Build and verify
 
 ```sh
+./tests/check.sh
 ./scripts/build-in-docker.sh
 ./scripts/verify-artifacts-in-docker.sh
 ./scripts/build-r5c-image-in-docker.sh
 ```
 
-The Docker workflow uses the pinned OpenWrt 25.12.5 SDK and ImageBuilder,
-verifies source and toolchain checksums, signs the APK feed when the local key
-is available, executes the ARM64 binary under QEMU, validates package metadata
-and file modes, compiles the ucode RPC backend, and builds both R5C sysupgrade
-images. See **[Building and publishing](docs/BUILDING.md)**.
+The pipeline uses checksum-pinned source archives and the OpenWrt 25.12.5 SDK,
+cross-compiles AArch64 APKs, target-compiles both rpcd ucode backends, executes
+the ARM64 binaries under QEMU, verifies package signatures/metadata/modes, and
+builds NanoPi R5C sysupgrade images.
 
 ## Documentation
 
-- [Installation](docs/INSTALLING.md)
+- [Installation and troubleshooting](docs/INSTALLING.md)
 - [Firmware Selector, first boot, and ImageBuilder](docs/IMAGEBUILDER.md)
-- [Architecture and security boundaries](docs/ARCHITECTURE.md)
 - [Configuration reference](docs/CONFIGURATION.md)
+- [Architecture and security model](docs/ARCHITECTURE.md)
 - [Building and publishing](docs/BUILDING.md)
 - [Maintainer handoff](docs/MAINTAINER-HANDOFF.md)
 
-The repository documentation is the canonical source rather than a separate
-GitHub Wiki. Keeping it beside the code makes every release's instructions
-versioned, reviewable, and available offline.
-
-## Status
-
-Automated package, feed, ARM64 execution, and firmware-image checks pass.
-Installation, reboot reconnection, and real tunnel traffic on a physical R5C
-remain the final hardware acceptance gate.
-
-The integration code is Apache-2.0. Newt is fetched from its pinned upstream
-tag and built under Fossorial's AGPL-3.0/commercial licensing terms; this build
-uses the AGPL-3.0 option.
+Repository documentation is canonical so code and instructions remain at the
+same reviewed revision. Integration code is Apache-2.0; the built Fossorial
+components retain their AGPL-3.0/commercial licensing terms and the packages
+declare AGPL-3.0.

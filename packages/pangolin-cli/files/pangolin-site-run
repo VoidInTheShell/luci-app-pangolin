@@ -1,0 +1,14 @@
+#!/bin/sh
+
+RUNTIME_DIR=/var/run/pangolin
+
+umask 077
+date +%s > "$RUNTIME_DIR/site-started"
+export HOME="$RUNTIME_DIR/home"
+export NEWT_SYSTEM_SUBSTRATE=CONTAINER
+export PANGOLIN_CLI_DISABLE_UPDATE_CHECK=true
+export PANGOLIN_CLI_DISABLE_COMPANION_MODE=true
+mkdir -p "$HOME"
+chmod 0700 "$HOME"
+
+exec /usr/bin/pangolin up site --config-file "$RUNTIME_DIR/site.json"

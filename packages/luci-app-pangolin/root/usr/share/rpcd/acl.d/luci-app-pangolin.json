@@ -1,0 +1,15 @@
+{
+	"luci-app-pangolin": {
+		"description": "Manage the Pangolin site connector",
+		"read": {
+			"ubus": {
+				"luci.pangolin": [ "get_config", "get_status", "get_logs" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"luci.pangolin": [ "set_config", "service_action", "sync_network" ]
+			}
+		}
+	}
+}

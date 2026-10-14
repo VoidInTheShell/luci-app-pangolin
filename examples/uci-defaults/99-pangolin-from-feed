@@ -1,0 +1,142 @@
+#!/bin/sh
+set -eu
+
+# Paste this entire script into the OpenWrt Firmware Selector's
+# "Script to run on first boot (uci-defaults)" box. It installs the signed
+# package feed after the router obtains Internet access, then configures the
+# official Pangolin site connector.
+#
+# WARNING: values embedded in an image remain recoverable from that image.
+# Prefer a unique, short-lived provisioning key for unattended enrollment.
+
+PANGOLIN_ENDPOINT='https://pangolin.example.com'
+
+# Choose provisioning OR an existing Site ID/secret pair.
+NEWT_PROVISIONING_KEY=''
+NEWT_SITE_NAME=''
+NEWT_ID=''
+NEWT_SECRET=''
+
+# Experimental. Leave disabled for the supported userspace site connector.
+PANGOLIN_NATIVE_MAIN='0'
+
+case "$PANGOLIN_ENDPOINT" in
+	https://?*) ;;
+	*)
+		echo 'PANGOLIN_ENDPOINT must be a complete https:// URL.' >&2
+		exit 1
+		;;
+esac
+case "$PANGOLIN_NATIVE_MAIN" in 0|1) ;; *) exit 1 ;; esac
+
+if [ -n "$NEWT_PROVISIONING_KEY" ] &&
+   { [ -n "$NEWT_ID" ] || [ -n "$NEWT_SECRET" ]; }; then
+	echo 'Set a provisioning key OR an ID/secret pair, not both.' >&2
+	exit 1
+fi
+if { [ -n "$NEWT_ID" ] && [ -z "$NEWT_SECRET" ]; } ||
+   { [ -z "$NEWT_ID" ] && [ -n "$NEWT_SECRET" ]; }; then
+	echo 'NEWT_ID and NEWT_SECRET must be supplied together.' >&2
+	exit 1
+fi
+if [ -n "$NEWT_PROVISIONING_KEY" ] && [ -z "$NEWT_SITE_NAME" ]; then
+	hostname_part="$(uci -q get system.@system[0].hostname || true)"
+	mac_part="$(cat /sys/class/net/eth0/address 2>/dev/null | tr -d ':' | tail -c 7 || true)"
+	NEWT_SITE_NAME="${hostname_part:-openwrt}-${mac_part:-pangolin}"
+fi
+
+shell_quote() {
+	printf "'"
+	printf '%s' "$1" | sed "s/'/'\\\\''/g"
+	printf "'"
+}
+
+umask 077
+{
+	printf 'PANGOLIN_ENDPOINT='; shell_quote "$PANGOLIN_ENDPOINT"; printf '\n'
+	printf 'NEWT_PROVISIONING_KEY='; shell_quote "$NEWT_PROVISIONING_KEY"; printf '\n'
+	printf 'NEWT_SITE_NAME='; shell_quote "$NEWT_SITE_NAME"; printf '\n'
+	printf 'NEWT_ID='; shell_quote "$NEWT_ID"; printf '\n'
+	printf 'NEWT_SECRET='; shell_quote "$NEWT_SECRET"; printf '\n'
+	printf 'PANGOLIN_NATIVE_MAIN='; shell_quote "$PANGOLIN_NATIVE_MAIN"; printf '\n'
+} > /etc/pangolin-bootstrap.env
+chmod 0600 /etc/pangolin-bootstrap.env
+
+mkdir -p /usr/libexec
+cat > /usr/libexec/pangolin-feed-bootstrap <<'BOOTSTRAP'
+#!/bin/sh
+set -u
+
+feed_base='https://github.com/alexanderjlynn/openwrt-newt/releases/latest/download'
+key_path='/etc/apk/keys/openwrt-newt-public-key.pem'
+key_sha256='54a584f2a271bddb263225be0ed7e972fd506529adcc03993a8e50bac32c7546'
+key_tmp='/tmp/openwrt-newt-public-key.pem'
+max_attempts=60
+
+install_once() {
+	rm -f "$key_tmp"
+	wget -qO "$key_tmp" "$feed_base/openwrt-newt-public-key.pem" || return 1
+	echo "$key_sha256  $key_tmp" | sha256sum -c - >/dev/null || return 1
+	mkdir -p /etc/apk/keys /etc/apk/repositories.d
+	cp "$key_tmp" "$key_path" || return 1
+	chmod 0644 "$key_path" || return 1
+	rm -f "$key_tmp"
+	echo "$feed_base/packages.adb" > /etc/apk/repositories.d/openwrt-newt.list
+	apk -U add luci-app-pangolin || return 1
+
+	# shellcheck disable=SC1091
+	. /etc/pangolin-bootstrap.env
+	if [ -n "$NEWT_PROVISIONING_KEY" ] || [ -n "$NEWT_ID" ]; then
+		/usr/libexec/configure-pangolin /etc/pangolin-bootstrap.env || return 1
+	else
+		uci -q set pangolin.main.endpoint="$PANGOLIN_ENDPOINT"
+		uci -q set pangolin.main.native_main="$PANGOLIN_NATIVE_MAIN"
+		uci -q set pangolin.main.enabled='0'
+		uci -q commit pangolin
+		chmod 0600 /etc/config/pangolin
+		/etc/init.d/pangolin enable
+	fi
+
+	return 0
+}
+
+attempt=1
+while [ "$attempt" -le "$max_attempts" ]; do
+	if install_once; then
+		echo 'Pangolin packages installed and bootstrap configuration applied.'
+		/etc/init.d/pangolin-feed-bootstrap disable 2>/dev/null || true
+		rm -f /etc/pangolin-bootstrap.env /etc/init.d/pangolin-feed-bootstrap \
+			/usr/libexec/pangolin-feed-bootstrap "$key_tmp"
+		exit 0
+	fi
+	echo "Pangolin bootstrap attempt $attempt/$max_attempts failed; retrying in 15 seconds." >&2
+	attempt=$((attempt + 1))
+	sleep 15
+done
+
+echo 'Pangolin bootstrap did not complete; it will retry on the next boot.' >&2
+exit 1
+BOOTSTRAP
+chmod 0700 /usr/libexec/pangolin-feed-bootstrap
+
+cat > /etc/init.d/pangolin-feed-bootstrap <<'INIT'
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=99
+STOP=01
+
+start_service() {
+	procd_open_instance main
+	procd_set_param command /usr/libexec/pangolin-feed-bootstrap
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param term_timeout 10
+	procd_close_instance
+}
+INIT
+chmod 0755 /etc/init.d/pangolin-feed-bootstrap
+/etc/init.d/pangolin-feed-bootstrap enable
+/etc/init.d/pangolin-feed-bootstrap start
+
+exit 0

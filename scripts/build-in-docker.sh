@@ -14,6 +14,7 @@ docker run --rm \
 	--platform linux/amd64 \
 	-e OPENWRT_CACHE_DIR=/openwrt-cache \
 	-e NEWT_USE_EXTERNAL_GO=1 \
+	-e PANGOLIN_USE_EXTERNAL_GO=1 \
 	-e HOST_UID="$host_uid" \
 	-e HOST_GID="$host_gid" \
 	"${signing_args[@]}" \

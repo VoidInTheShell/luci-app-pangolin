@@ -155,6 +155,12 @@ function readCommand(command) {
 	return { code: handle.close(), output: trim(output) };
 }
 
+function runService(action) {
+	let result = readCommand(`/usr/libexec/newt-service-action ${action}`);
+	result.output = redact(result.output);
+	return result;
+}
+
 function serviceInfo() {
 	let info = ubus.call('service', 'list', { name: service }) ?? {};
 	let instance = info?.[service]?.instances?.main ?? {};
@@ -209,10 +215,13 @@ const methods = {
 			let action = (config.enabled == null ? readConfig().enabled == '1' : boolString(config.enabled) == '1')
 				? 'restart'
 				: 'stop';
-			let rc = system([ '/etc/init.d/newt', action ]);
-			return rc == 0
+			let result = runService(action);
+			return result.code == 0
 				? { success: true }
-				: { success: false, error: `Configuration saved, but the service ${action} failed. Check the logs.` };
+				: {
+					success: false,
+					error: `Configuration saved, but the service ${action} failed${result.output ? ': ' + result.output : '.'}`
+				};
 		}
 	},
 
@@ -235,7 +244,7 @@ const methods = {
 					? cfg.has_provisioning_key && length(cfg.name) > 0
 					: cfg.has_secret && length(cfg.id) > 0,
 				enabled: cfg.enabled == '1',
-				startup_enabled: system([ '/etc/init.d/newt', 'enabled' ]) == 0,
+				startup_enabled: runService('enabled').code == 0,
 				version: replace(version, /^Newt version\s+/, ''),
 				endpoint: cfg.endpoint,
 				metrics_enabled: cfg.metrics == '1',
@@ -262,10 +271,10 @@ const methods = {
 				return { success: false, error: 'Unsupported service action.' };
 			if ((action == 'start' || action == 'restart') && readConfig().enabled != '1')
 				return { success: false, error: 'Enable Newt in the configuration and save before starting it.' };
-			let rc = system([ '/etc/init.d/newt', action ]);
-			return rc == 0
+			let result = runService(action);
+			return result.code == 0
 				? { success: true }
-				: { success: false, error: `Service action '${action}' failed.` };
+				: { success: false, error: `Service action '${action}' failed${result.output ? ': ' + result.output : '.'}` };
 		}
 	}
 };

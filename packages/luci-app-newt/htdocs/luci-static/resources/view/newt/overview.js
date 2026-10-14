@@ -6,11 +6,12 @@
 'require ui';
 'require view';
 
-const callGetConfig = rpc.declare({ object: 'luci.newt', method: 'get_config' });
-const callSetConfig = rpc.declare({ object: 'luci.newt', method: 'set_config', params: [ 'config' ] });
-const callGetStatus = rpc.declare({ object: 'luci.newt', method: 'get_status' });
-const callGetLogs = rpc.declare({ object: 'luci.newt', method: 'get_logs', params: [ 'lines' ] });
-const callServiceAction = rpc.declare({ object: 'luci.newt', method: 'service_action', params: [ 'action' ] });
+const rpcOptions = { reject: true, expect: { '': {} } };
+const callGetConfig = rpc.declare(Object.assign({ object: 'luci.newt', method: 'get_config' }, rpcOptions));
+const callSetConfig = rpc.declare(Object.assign({ object: 'luci.newt', method: 'set_config', params: [ 'config' ] }, rpcOptions));
+const callGetStatus = rpc.declare(Object.assign({ object: 'luci.newt', method: 'get_status' }, rpcOptions));
+const callGetLogs = rpc.declare(Object.assign({ object: 'luci.newt', method: 'get_logs', params: [ 'lines' ] }, rpcOptions));
+const callServiceAction = rpc.declare(Object.assign({ object: 'luci.newt', method: 'service_action', params: [ 'action' ] }, rpcOptions));
 
 let mapData;
 
@@ -101,6 +102,10 @@ function notifyResult(result, successText) {
 	return result;
 }
 
+function errorMessage(error) {
+	return error?.message || String(error || _('Unknown RPC error'));
+}
+
 function runAction(action) {
 	ui.showModal(_('Pangolin Newt'), [ E('p', { 'class': 'spinning' }, _('Applying service action…')) ]);
 	return callServiceAction(action).then(result => {
@@ -113,7 +118,7 @@ function runAction(action) {
 			updateStatus(node, status);
 	}).catch(error => {
 		ui.hideModal();
-		ui.addNotification(null, E('p', {}, error.message), 'danger');
+		ui.addNotification(null, E('pre', { 'style': 'white-space:pre-wrap' }, errorMessage(error)), 'danger');
 	});
 }
 
@@ -338,7 +343,7 @@ return view.extend({
 				window.setTimeout(() => window.location.reload(), 700);
 		}).catch(error => {
 			ui.hideModal();
-			ui.addNotification(null, E('p', {}, error.message), 'danger');
+		ui.addNotification(null, E('pre', { 'style': 'white-space:pre-wrap' }, errorMessage(error)), 'danger');
 		});
 	},
 

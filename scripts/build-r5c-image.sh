@@ -20,9 +20,9 @@ for command in curl find make sha256sum tar; do
 	}
 done
 
-newt_apk="$(find "$package_dir" -maxdepth 1 -type f -name 'newt-*.apk' -print -quit 2>/dev/null || true)"
-luci_apk="$(find "$package_dir" -maxdepth 1 -type f -name 'luci-app-newt-*.apk' -print -quit 2>/dev/null || true)"
-[ -f "$newt_apk" ] && [ -f "$luci_apk" ] || {
+pangolin_apk="$(find "$package_dir" -maxdepth 1 -type f -name 'pangolin-cli-*.apk' -print -quit 2>/dev/null || true)"
+luci_pangolin_apk="$(find "$package_dir" -maxdepth 1 -type f -name 'luci-app-pangolin-*.apk' -print -quit 2>/dev/null || true)"
+[ -f "$pangolin_apk" ] && [ -f "$luci_pangolin_apk" ] || {
 	echo 'Build the APKs first with ./scripts/build-openwrt.sh.' >&2
 	exit 1
 }
@@ -44,8 +44,8 @@ fi
 	exit 1
 }
 
-install -m 0644 "$newt_apk" "$imagebuilder_dir/packages/"
-install -m 0644 "$luci_apk" "$imagebuilder_dir/packages/"
+install -m 0644 "$pangolin_apk" "$imagebuilder_dir/packages/"
+install -m 0644 "$luci_pangolin_apk" "$imagebuilder_dir/packages/"
 if [ -f "$package_dir/openwrt-newt-public-key.pem" ]; then
 	install -m 0644 "$package_dir/openwrt-newt-public-key.pem" "$imagebuilder_dir/keys/"
 fi
@@ -61,7 +61,7 @@ fi
 
 make -C "$imagebuilder_dir" image \
 	PROFILE=friendlyarm_nanopi-r5c \
-	PACKAGES='luci luci-app-newt' \
+	PACKAGES='luci luci-app-pangolin' \
 	"${files_args[@]}"
 
 mapfile -t images < <(find "$imagebuilder_dir/bin/targets/rockchip/armv8" \
@@ -74,11 +74,13 @@ mapfile -t images < <(find "$imagebuilder_dir/bin/targets/rockchip/armv8" \
 # Do not retain images or manifests from an earlier package revision in the
 # release directory when rebuilding incrementally.
 rm -f "$output_dir"/*-newt-sysupgrade.img.gz \
-	"$output_dir"/*-newt.manifest "$output_dir/images-sha256sums"
+	"$output_dir"/*-newt.manifest \
+	"$output_dir"/*-pangolin-sysupgrade.img.gz \
+	"$output_dir"/*-pangolin.manifest "$output_dir/images-sha256sums"
 
 for image in "${images[@]}"; do
 	base="$(basename "$image")"
-	destination="${base%-sysupgrade.img.gz}-newt-sysupgrade.img.gz"
+	destination="${base%-sysupgrade.img.gz}-pangolin-sysupgrade.img.gz"
 	install -m 0644 "$image" "$output_dir/$destination"
 done
 
@@ -88,15 +90,15 @@ manifest="$(find "$imagebuilder_dir/bin/targets/rockchip/armv8" \
 	echo 'ImageBuilder did not produce the NanoPi R5C package manifest.' >&2
 	exit 1
 }
-grep -q '^newt - 1\.18\.1-r2$' "$manifest" || {
-	echo 'The R5C image manifest does not contain the expected Newt package.' >&2
+grep -q '^pangolin-cli - 0\.18\.1-r1$' "$manifest" || {
+	echo 'The R5C image manifest does not contain the expected Pangolin CLI package.' >&2
 	exit 1
 }
-grep -q '^luci-app-newt - 1\.0\.0-r2$' "$manifest" || {
-	echo 'The R5C image manifest does not contain the expected LuCI package.' >&2
+grep -q '^luci-app-pangolin - 1\.0\.0-r1$' "$manifest" || {
+	echo 'The R5C image manifest does not contain the expected Pangolin LuCI package.' >&2
 	exit 1
 }
-manifest_name="$(basename "$manifest" .manifest)-newt.manifest"
+manifest_name="$(basename "$manifest" .manifest)-pangolin.manifest"
 install -m 0644 "$manifest" "$output_dir/$manifest_name"
 
 (

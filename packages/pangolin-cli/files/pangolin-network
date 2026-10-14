@@ -1,0 +1,82 @@
+#!/bin/sh
+
+set -eu
+
+ensure_section_type() {
+	local config="$1"
+	local section="$2"
+	local expected="$3"
+	local actual
+	actual="$(uci -q get "$config.$section" || true)"
+	if [ -n "$actual" ] && [ "$actual" != "$expected" ]; then
+		echo "$config.$section already exists with type '$actual' (expected '$expected')." >&2
+		return 1
+	fi
+	[ -n "$actual" ] || uci -q set "$config.$section=$expected"
+}
+
+reload_changed() {
+	local network_changes firewall_changes
+	network_changes="$(uci -q changes network || true)"
+	firewall_changes="$(uci -q changes firewall || true)"
+
+	[ -z "$network_changes" ] || uci -q commit network
+	[ -z "$firewall_changes" ] || uci -q commit firewall
+
+	[ "${PANGOLIN_NO_RELOAD:-0}" = '1' ] && return 0
+	[ -z "$network_changes" ] || /etc/init.d/network reload >/dev/null 2>&1 || true
+	[ -z "$firewall_changes" ] || /etc/init.d/firewall reload >/dev/null 2>&1 || true
+}
+
+ensure_network() {
+	local interface_name zone_exists
+	interface_name="$(uci -q get pangolin.main.interface_main || echo pangolin)"
+	zone_exists="$(uci -q get firewall.pangolin || true)"
+
+	ensure_section_type network pangolin interface
+	uci -q set network.pangolin.proto='none'
+	uci -q set network.pangolin.device="$interface_name"
+
+	ensure_section_type firewall pangolin zone
+	uci -q set firewall.pangolin.name='pangolin'
+	uci -q set firewall.pangolin.network='pangolin'
+	if [ -z "$zone_exists" ]; then
+		# Native-main binds the site proxy listeners to the tunnel address, so
+		# traffic delivered from Pangolin must be allowed to the local host.
+		uci -q set firewall.pangolin.input='ACCEPT'
+		uci -q set firewall.pangolin.output='ACCEPT'
+		uci -q set firewall.pangolin.forward='REJECT'
+		uci -q set firewall.pangolin.comment='Pangolin native site tunnel'
+	fi
+}
+
+sync_network() {
+	local enabled native_main manage_network
+	enabled="$(uci -q get pangolin.main.enabled || echo 0)"
+	native_main="$(uci -q get pangolin.main.native_main || echo 0)"
+	manage_network="$(uci -q get pangolin.main.manage_network || echo 1)"
+
+	if [ "$enabled" = '1' ] && [ "$native_main" = '1' ] && [ "$manage_network" = '1' ]; then
+		ensure_network
+	fi
+
+	reload_changed
+}
+
+case "${1:-}" in
+	ensure)
+		ensure_network
+		reload_changed
+		;;
+	sync)
+		sync_network
+		;;
+	status)
+		uci -q show network.pangolin || true
+		uci -q show firewall.pangolin || true
+		;;
+	*)
+		echo 'Usage: pangolin-network {ensure|sync|status}' >&2
+		exit 2
+		;;
+esac

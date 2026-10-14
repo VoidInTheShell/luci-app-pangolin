@@ -1,0 +1,13 @@
+--- a/api/api_unix.go
++++ b/api/api_unix.go
+@@ -30,8 +30,8 @@ func createUnixListener(socketPath strin
+ 		return nil, fmt.Errorf("failed to listen on Unix socket: %w", err)
+ 	}
+ 
+-	// Set socket permissions to allow access
+-	if err := os.Chmod(socketPath, 0666); err != nil {
++	// The OpenWrt service and status RPC both run as root; do not expose the control socket.
++	if err := os.Chmod(socketPath, 0600); err != nil {
+ 		listener.Close()
+ 		return nil, fmt.Errorf("failed to set socket permissions: %w", err)
+ 	}

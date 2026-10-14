@@ -63,6 +63,7 @@ jobs:
       - name: Build APKs and feed index
         env:
           NEWT_USE_EXTERNAL_GO: '1'
+          PANGOLIN_USE_EXTERNAL_GO: '1'
         run: ./scripts/build-openwrt.sh
 
       - name: Verify signed artifacts and ARM64 execution
@@ -74,7 +75,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: openwrt-newt-25.12.5-aarch64_generic
+          name: openwrt-pangolin-25.12.5-aarch64_generic
           path: dist/openwrt-25.12.5/aarch64_generic/
           if-no-files-found: error
 
@@ -89,7 +90,7 @@ jobs:
       - name: Download verified build artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: openwrt-newt-25.12.5-aarch64_generic
+          name: openwrt-pangolin-25.12.5-aarch64_generic
           path: dist/openwrt-25.12.5/aarch64_generic
 
       - name: Attach release artifacts
@@ -99,7 +100,7 @@ jobs:
         run: |
           gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
             gh release create "${GITHUB_REF_NAME}" \
-              --title "OpenWrt Newt ${GITHUB_REF_NAME}" \
+              --title "Pangolin for OpenWrt ${GITHUB_REF_NAME}" \
               --generate-notes
           mapfile -t assets < <(find dist/openwrt-25.12.5/aarch64_generic \
             -type f -not -name '.DS_Store' | sort)

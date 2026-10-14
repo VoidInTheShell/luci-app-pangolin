@@ -1,121 +1,126 @@
-# Architecture
+# Architecture and security model
 
-## Goals
+## Scope
 
-The integration should feel like a native OpenWrt network service while
-leaving all remote routing and reverse-proxy policy in Pangolin. It must be
-installable as a normal OpenWrt 25.12 APK, survive upgrades, avoid exposing
-credentials through process arguments or LuCI RPC, and remain reproducible from
-the tagged upstream source.
+The primary package follows Pangolin's current Linux site installation model
+as closely as OpenWrt permits:
 
-## Component model
+```text
+pangolin up site --config-file /var/run/pangolin/site.json
+```
+
+OpenWrt is Linux, but it uses `procd`, UCI, ubus/rpcd, netifd, and firewall4
+instead of systemd. The package supplies only that platform integration. It
+does not reimplement Pangolin's control plane or run Docker.
 
 ```text
 LuCI browser
-    │ authenticated ubus RPC
+    │ authenticated ubus JSON-RPC
     ▼
-luci.newt rpcd plugin ───────► /etc/config/newt (0600)
-    │ status/actions/logs                  │
-    ▼                                      │ service start
-OpenWrt ubus + logd                         ▼
-                                      /etc/init.d/newt
-                                             │ renders root-only JSON
-                                             ▼
-                                 /var/run/newt/config.json (0600)
-                                             │
-                                             ▼
-                                      procd → newt
-                                             │ outbound HTTPS/WSS/UDP
-                                             ▼
-                                      Pangolin control plane
+luci.pangolin rpcd plugin ───────► /etc/config/pangolin (0600)
+    │ status, actions, logs                      │
+    │                                            ▼
+    │                                  /etc/init.d/pangolin
+    │                                            │ procd instance: site
+    │                                            ▼
+    │                              /var/run/pangolin/site.json
+    │                                            │
+    │                                            ▼
+    │                                  pangolin up site
+    │                                      (Newt 1.18.1)
+    │                                            │
+    └────────► netifd/firewall4 ◄──── optional native-main TUN
 ```
 
-`luci-app-newt` depends on `newt`, so one feed install resolves both packages.
-The LuCI files are `noarch`; the Newt package is `aarch64_generic` on the R5C.
+Pangolin remains authoritative for sites, resources, targets, clients, and
+access policies. LuCI manages this router's connector only.
+
+## Userspace networking and the optional NIC
+
+The standard Newt site connector uses a userspace netstack. Reverse-proxy
+traffic is terminated and forwarded inside the process, so no Linux NIC,
+kernel route, netifd interface, or firewall zone appears. This is normal and is
+the recommended mode.
+
+Upstream also exposes `nativeMain`. If enabled, Newt requests `/dev/net/tun`
+and creates a host interface. The optional OpenWrt integration binds that name
+to `network.pangolin` and zone `firewall.pangolin` so counters and policy are
+visible in LuCI. The initial input policy is `ACCEPT` because site proxy
+listeners bind on the tunnel address; forwarding remains `REJECT` and no LAN
+forwarding is created.
+
+This path is labeled experimental because upstream Newt issue #403 reports a
+native-main handshake failure. The package does not imply that enabling a TUN
+is necessary for normal site/reverse-proxy operation.
+
+The separate Pangolin machine-client role is intentionally outside this LuCI
+app's scope. This avoids conflating a site connector with a client VPN and
+keeps upgrades close to the official `pangolin up site` contract.
 
 ## Service lifecycle
 
-`/etc/init.d/newt` is an `rc.common` service using `USE_PROCD=1`. It validates
-that an endpoint and an authentication method are present, converts UCI into
-Newt's JSON schema with `jshn`, and starts a single `main` instance. Standard
-output and error go to `logd`. The default respawn policy waits five seconds and
-stops a rapid crash loop after five retries inside the stability window.
+`/etc/init.d/pangolin` uses `USE_PROCD=1` and one named `site` instance. It:
 
-The fixed health file `/var/run/newt/healthy` is managed by Newt itself. Newt
-creates it after successfully establishing the tunnel and removes it after
-connection loss. LuCI therefore distinguishes:
+- validates endpoint and credentials before launch;
+- renders Newt's JSON configuration with umask `077`;
+- optionally synchronizes native-main network configuration;
+- sends stdout/stderr to logd;
+- watches `/etc/config/pangolin` and supports reload;
+- applies a bounded respawn policy; and
+- removes transient runtime state on stop.
 
-- disabled;
-- stopped;
-- running but starting/reconnecting; and
-- connected.
+A wrapper records start time, sets a private runtime home, disables component
+self-update behavior, and executes the official CLI. The binary is linked with
+`ManagedBy=openwrt`; APK remains the sole owner of `/usr/bin/pangolin`.
 
-## Credential lifecycle
+Provisioning initially writes generated credentials into the root-only runtime
+JSON. A small ucode helper copies them back to UCI, switches to credentials
+mode, and removes the one-time key.
 
-Persistent secrets live only in `/etc/config/newt`, mode `0600`. The rpcd
-backend returns boolean `has_*` fields instead of credential values. A blank
-password field means “keep the stored value”; clearing one requires an explicit
-checkbox.
+## LuCI JSON-RPC boundary
 
-Newt 1.18.1's upstream debug logging prints token and provisioning response
-bodies. The package applies a narrow source patch which retains status-level
-diagnostics without writing those credentials to `logd`. The RPC backend also
-redacts stored secrets as a second boundary before returning log text to LuCI.
-
-The service renders `/var/run/newt/config.json` with a restrictive umask and
-passes only its path to Newt. Secrets do not appear in `ps` output or the procd
-command array.
-
-For one-time provisioning, Newt exchanges the key for an ID and secret and
-writes them into the runtime JSON. A second supervised helper observes that
-file, stores the permanent credentials in UCI, removes the one-time key, and
-switches the authentication mode to normal credentials. No credential is
-passed through a shell command argument.
-
-## LuCI and RPC boundary
-
-The browser does not receive raw UCI access. Its ACL grants only these methods:
+The browser never invokes shell commands. It calls an rpcd ucode object with
+these ACLs:
 
 - read: `get_config`, `get_status`, `get_logs`;
-- write: `set_config`, `service_action`.
+- write: `set_config`, `service_action`, `sync_network`.
 
-The rpcd plugin allowlists every accepted setting and requires an HTTPS
-control-plane URL in addition to validating paths,
-durations, integer bounds, lists, booleans, and service actions. Log output is
-redacted again at the server boundary even though Newt is not expected to log
-credentials.
+The backend allowlists every field, validates types/ranges/paths/URLs, never
+returns stored secrets, and sends service actions through fixed allowlisted
+helpers. RPC transport errors reject the browser promise so the UI renders the
+actual ubus error. Init validation errors are captured and also sent to logd,
+addressing the previous generic **Operation failed** behavior.
 
-## Updates
+## Credential and local security
 
-Newt 1.18.1 contains an in-place self-updater. The `procd` environment uses
-Newt's supported self-update opt-out so that `/usr/bin/newt` cannot drift away
-from the installed APK. Releases are upgraded through the OpenWrt package feed.
+- `/etc/config/pangolin` and runtime JSON are mode `0600`.
+- Runtime directories use umask `077`.
+- Secrets remain out of process arguments and RPC responses.
+- Embedded Newt is patched not to log token/provisioning response bodies and
+  to retain mode `0600` when writing generated credentials.
+- Embedded OLM is patched to use a root-only control socket even though this
+  app does not manage client mode; the official CLI still contains that code.
+- The RPC log method redacts every stored secret again before returning text.
+- First-boot images containing credentials remain sensitive after writable
+  bootstrap files are deleted.
 
-## Native versus userspace networking
+## Packaging
 
-The default uses Newt's userspace WireGuard/netstack implementation and does
-not require Docker or a kernel tunnel device. Advanced native-interface flags
-are exposed for completeness, but require compatible kernel WireGuard support
-and should remain disabled on a standard R5C installation unless specifically
-needed.
+The R5C target is `rockchip/armv8` with package architecture
+`aarch64_generic`. `pangolin-cli` is architecture-specific;
+`luci-app-pangolin` is `noarch` and depends on it. One `apk add
+luci-app-pangolin` installs the complete app.
 
-## Packaging and releases
-
-OpenWrt 25.12 uses APK v3 repositories. A public release consists of:
-
-- the architecture-specific Newt APK;
-- the `noarch` LuCI APK;
-- a signed `packages.adb` index; and
-- a stable P-256 public key installed under `/etc/apk/keys/`.
-
-The package feed must be rebuilt for each OpenWrt release line and package
-architecture. A single ARM64 Newt binary is not named after the R5C because
-`aarch64_generic` also correctly serves other baseline ARMv8 OpenWrt boards.
+Sources are version- and checksum-pinned. The CLI build replaces its Newt and
+OLM modules with exact local source archives before applying narrow security
+patches. Releases contain signed APK v3 packages and a signed `packages.adb`
+feed.
 
 ## Deliberate non-goals
 
-- Managing Pangolin resources or users from LuCI.
-- Replacing Pangolin's control plane.
-- Docker-based execution.
-- Firmware flashing or kernel modification.
-- Automatic in-place replacement of the package-managed Newt binary.
+- Managing Pangolin resources or access policies in LuCI.
+- Running systemd or Docker on the router.
+- Treating a machine client as part of site configuration.
+- Credential-free approval enrollment not exposed by upstream.
+- Automatically forwarding Pangolin traffic to LAN.
+- Allowing an embedded component to self-update outside APK.

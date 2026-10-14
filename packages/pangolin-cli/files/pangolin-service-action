@@ -1,0 +1,11 @@
+#!/bin/sh
+
+case "$1" in
+	start|stop|restart|enable|disable|enabled) ;;
+	*)
+		echo "Unsupported Pangolin service action: $1" >&2
+		exit 2
+		;;
+esac
+
+exec /etc/init.d/pangolin "$1" 2>&1

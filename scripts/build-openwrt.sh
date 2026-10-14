@@ -22,7 +22,7 @@ for command in curl git make sha256sum tar; do
 	}
 done
 
-if [ "${NEWT_USE_EXTERNAL_GO:-0}" = '1' ]; then
+if [ "${NEWT_USE_EXTERNAL_GO:-0}" = '1' ] || [ "${PANGOLIN_USE_EXTERNAL_GO:-0}" = '1' ]; then
 	command -v go >/dev/null 2>&1 || {
 		echo 'NEWT_USE_EXTERNAL_GO=1 requires Go 1.26 or newer in PATH.' >&2
 		exit 1
@@ -95,6 +95,8 @@ link_package() {
 
 link_package newt "$repo_root/packages/newt"
 link_package luci-app-newt "$repo_root/packages/luci-app-newt"
+link_package pangolin-cli "$repo_root/packages/pangolin-cli"
+link_package luci-app-pangolin "$repo_root/packages/luci-app-pangolin"
 
 if [ -n "${OPENWRT_APK_PRIVATE_KEY_FILE:-}" ]; then
 	command -v openssl >/dev/null 2>&1 || {
@@ -124,13 +126,42 @@ sed -i \
 	-e '/^# CONFIG_PACKAGE_liblucihttp-lua is not set$/d' \
 	.config
 echo '# CONFIG_PACKAGE_liblucihttp-lua is not set' >> .config
+
+# SDK seed configurations enable CONFIG_ALL, CONFIG_ALL_NONSHARED, and
+# CONFIG_ALL_KMODS so arbitrary out-of-tree packages can be built. This project
+# selects its dependencies explicitly; leaving those umbrellas enabled makes
+# package/kernel/linux package every module (extremely slow under x86
+# emulation on Apple Silicon).
+sed -i \
+	-e '/^CONFIG_ALL=/d' \
+	-e '/^# CONFIG_ALL is not set$/d' \
+	-e '/^CONFIG_ALL_NONSHARED=/d' \
+	-e '/^# CONFIG_ALL_NONSHARED is not set$/d' \
+	-e '/^CONFIG_ALL_KMODS=/d' \
+	-e '/^# CONFIG_ALL_KMODS is not set$/d' \
+	-e '/^CONFIG_PACKAGE_kmod-/d' \
+	-e '/^# CONFIG_PACKAGE_kmod-/d' \
+	.config
+echo '# CONFIG_ALL is not set' >> .config
+echo '# CONFIG_ALL_NONSHARED is not set' >> .config
+echo '# CONFIG_ALL_KMODS is not set' >> .config
 make defconfig
 make package/newt/compile
 make package/luci-app-newt/compile
+# The package declares kmod-tun as a runtime dependency, but the release SDK
+# does not need to rebuild OpenWrt's official kernel package to compile this
+# static Go binary. Without NO_DEPS the kernel package target emits every
+# target-default module, which is both unnecessary and prohibitively slow
+# under x86 emulation on Apple Silicon. ImageBuilder and apk resolve the exact
+# release-matched kmod-tun from the official OpenWrt repository.
+make package/pangolin-cli/compile NO_DEPS=1
+make package/luci-app-pangolin/compile NO_DEPS=1
 make package/index
 
 newt_apk="$(find bin/packages -type f -name 'newt-*.apk' -print -quit)"
 luci_apk="$(find bin/packages -type f -name 'luci-app-newt-*.apk' -print -quit)"
+pangolin_apk="$(find bin/packages -type f -name 'pangolin-cli-*.apk' -print -quit)"
+luci_pangolin_apk="$(find bin/packages -type f -name 'luci-app-pangolin-*.apk' -print -quit)"
 host_apk="$sdk_dir/staging_dir/host/bin/apk"
 
 [ -n "$newt_apk" ] && [ -f "$newt_apk" ] || {
@@ -139,6 +170,14 @@ host_apk="$sdk_dir/staging_dir/host/bin/apk"
 }
 [ -n "$luci_apk" ] && [ -f "$luci_apk" ] || {
 	echo 'LuCI APK was not produced.' >&2
+	exit 1
+}
+[ -n "$pangolin_apk" ] && [ -f "$pangolin_apk" ] || {
+	echo 'Pangolin CLI APK was not produced.' >&2
+	exit 1
+}
+[ -n "$luci_pangolin_apk" ] && [ -f "$luci_pangolin_apk" ] || {
+	echo 'Pangolin LuCI APK was not produced.' >&2
 	exit 1
 }
 [ -x "$host_apk" ] || {
@@ -150,7 +189,7 @@ host_apk="$sdk_dir/staging_dir/host/bin/apk"
 # Normalize every release artifact to the configured stable key instead of
 # trusting incremental package-signing state.
 if [ -n "${OPENWRT_APK_PRIVATE_KEY_FILE:-}" ]; then
-	for package_file in "$newt_apk" "$luci_apk"; do
+	for package_file in "$newt_apk" "$luci_apk" "$pangolin_apk" "$luci_pangolin_apk"; do
 		"$host_apk" adbsign --allow-untrusted --reset-signatures \
 			--sign-key "$sdk_dir/private-key.pem" \
 			"$package_file"
@@ -160,9 +199,12 @@ fi
 # Prevent an incremental local build from publishing superseded package
 # revisions alongside the current pair. CI starts clean, but releases must be
 # equally deterministic when reproduced from a developer workstation.
-rm -f "$output_dir"/newt-*.apk "$output_dir"/luci-app-newt-*.apk
+rm -f "$output_dir"/newt-*.apk "$output_dir"/luci-app-newt-*.apk \
+	"$output_dir"/pangolin-cli-*.apk "$output_dir"/luci-app-pangolin-*.apk
 install -m 0644 "$newt_apk" "$output_dir/"
 install -m 0644 "$luci_apk" "$output_dir/"
+install -m 0644 "$pangolin_apk" "$output_dir/"
+install -m 0644 "$luci_pangolin_apk" "$output_dir/"
 
 sign_args=()
 if [ -n "${OPENWRT_APK_PRIVATE_KEY_FILE:-}" ]; then

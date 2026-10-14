@@ -1,0 +1,87 @@
+#!/bin/sh
+set -eu
+
+usage() {
+	cat >&2 <<'EOF'
+Usage: configure-pangolin CONFIG_FILE
+
+The root-only CONFIG_FILE is sourced as shell syntax. Set:
+
+  PANGOLIN_ENDPOINT='https://pangolin.example.com'
+
+Then set either NEWT_ID and NEWT_SECRET, or NEWT_PROVISIONING_KEY and
+NEWT_SITE_NAME. PANGOLIN_NATIVE_MAIN may be 0 or 1 and defaults to 0.
+
+The file must not be group- or world-accessible.
+EOF
+	exit 2
+}
+
+[ "$#" -eq 1 ] || usage
+config_file="$1"
+[ -f "$config_file" ] || usage
+
+mode="$(stat -c '%a' "$config_file" 2>/dev/null || stat -f '%Lp' "$config_file" 2>/dev/null || true)"
+case "$mode" in
+	600|400) ;;
+	*)
+		echo "Refusing insecure configuration file mode ${mode:-unknown}; use chmod 600." >&2
+		exit 1
+		;;
+esac
+
+# shellcheck disable=SC1090
+. "$config_file"
+
+: "${PANGOLIN_ENDPOINT:?PANGOLIN_ENDPOINT is required}"
+case "$PANGOLIN_ENDPOINT" in
+	https://?*) ;;
+	*)
+		echo 'PANGOLIN_ENDPOINT must be a complete https:// URL.' >&2
+		exit 1
+		;;
+esac
+
+case "${PANGOLIN_NATIVE_MAIN:-0}" in
+	0|1) ;;
+	*)
+		echo 'PANGOLIN_NATIVE_MAIN must be 0 or 1.' >&2
+		exit 1
+		;;
+esac
+
+if [ -n "${NEWT_PROVISIONING_KEY:-}" ]; then
+	if [ -n "${NEWT_ID:-}" ] || [ -n "${NEWT_SECRET:-}" ]; then
+		echo 'Set a provisioning key OR an ID/secret pair, not both.' >&2
+		exit 1
+	fi
+	: "${NEWT_SITE_NAME:?NEWT_SITE_NAME is required with NEWT_PROVISIONING_KEY}"
+	uci -q set pangolin.main.auth_mode='provisioning'
+	uci -q set pangolin.main.provisioning_key="$NEWT_PROVISIONING_KEY"
+	uci -q set pangolin.main.name="$NEWT_SITE_NAME"
+	uci -q delete pangolin.main.id || true
+	uci -q delete pangolin.main.secret || true
+else
+	if { [ -n "${NEWT_ID:-}" ] && [ -z "${NEWT_SECRET:-}" ]; } ||
+	   { [ -z "${NEWT_ID:-}" ] && [ -n "${NEWT_SECRET:-}" ]; }; then
+		echo 'NEWT_ID and NEWT_SECRET must be supplied together.' >&2
+		exit 1
+	fi
+	: "${NEWT_ID:?NEWT_ID or NEWT_PROVISIONING_KEY is required}"
+	: "${NEWT_SECRET:?NEWT_SECRET is required with NEWT_ID}"
+	uci -q set pangolin.main.auth_mode='credentials'
+	uci -q set pangolin.main.id="$NEWT_ID"
+	uci -q set pangolin.main.secret="$NEWT_SECRET"
+	uci -q delete pangolin.main.provisioning_key || true
+	uci -q delete pangolin.main.name || true
+fi
+
+uci -q set pangolin.main.endpoint="$PANGOLIN_ENDPOINT"
+uci -q set pangolin.main.native_main="${PANGOLIN_NATIVE_MAIN:-0}"
+uci -q set pangolin.main.enabled='1'
+uci -q commit pangolin
+chmod 0600 /etc/config/pangolin
+/usr/libexec/pangolin-network sync
+/etc/init.d/pangolin enable
+/etc/init.d/pangolin restart
+echo 'Pangolin site is configured. Check with: ubus call service list {"name":"pangolin"}'

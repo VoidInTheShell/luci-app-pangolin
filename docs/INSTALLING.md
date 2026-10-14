@@ -1,27 +1,26 @@
-# Installation
+# Installation and troubleshooting
 
-These instructions are for a FriendlyElec NanoPi R5C running stock OpenWrt
-25.12.5. The package may also work on other `aarch64_generic` devices, but the
-published firmware images are R5C-specific.
+These packages target stock OpenWrt 25.12.5 on the FriendlyElec NanoPi R5C.
+The APKs may work on other `aarch64_generic` devices, but the prebuilt firmware
+images are R5C-specific.
 
 ## Preflight
 
-Connect to the router over SSH and confirm the release, target, and package
-architecture:
+SSH to the router and verify the release, target, and package architecture:
 
 ```sh
 ubus call system board
 apk --print-arch
 ```
 
-Expected values include OpenWrt `25.12.5`, target `rockchip/armv8`, and
-architecture `aarch64_generic`. Do not install the published R5C package on an
-older `opkg`-based OpenWrt release or a different CPU architecture.
+Expected values include OpenWrt `25.12.5`, `rockchip/armv8`, and
+`aarch64_generic`. OpenWrt 25.12 uses APK v3; do not use `opkg` or packages for
+a different OpenWrt release or CPU.
 
-## Recommended: trust the feed, then install in LuCI
+## Add the signed feed and install through LuCI
 
-Stock LuCI does not provide a safe browser-only workflow for introducing a new
-third-party repository signing key. Establish that trust anchor once over SSH:
+LuCI cannot safely introduce a new third-party repository trust key by itself.
+Establish the trust anchor once over SSH:
 
 ```sh
 wget -O /tmp/openwrt-newt-public-key.pem \
@@ -38,112 +37,150 @@ echo 'https://github.com/alexanderjlynn/openwrt-newt/releases/latest/download/pa
 apk update
 ```
 
-Then use LuCI:
+Then:
 
-1. Open **System → Software**.
-2. Click **Update lists**.
-3. Search the available packages for `luci-app-newt`.
-4. Click **Install**. Its dependency installs the matching ARM64 `newt`
-   package automatically.
-5. Sign out and back in, or hard-refresh LuCI, then open
-   **Services → Pangolin Newt**.
+1. Open **System → Software** and refresh package lists.
+2. Search for `luci-app-pangolin` and install it.
+3. Hard-refresh LuCI or sign in again.
+4. Open **Services → Pangolin**.
 
-The equivalent all-SSH installation is:
+The equivalent SSH command is `apk add luci-app-pangolin`. It installs the
+matching AArch64 `pangolin-cli`, `kmod-tun`, and runtime dependencies. Do not
+use `--allow-untrusted` with this signed feed.
 
-```sh
-apk add luci-app-newt
-```
+## Manual package upload in LuCI
 
-APK verifies both packages and the repository database with the installed
-public key. Do not add `--allow-untrusted` to this feed-based flow.
+Download these release assets on a trusted computer:
 
-## Install downloaded APK files
+- `pangolin-cli-0.18.1-r1.apk`
+- `luci-app-pangolin-1.0.0-r1.apk`
+- `packages-sha256sums`
+- `openwrt-newt-public-key.pem`
 
-The signed feed is easier because it resolves dependencies. For an offline or
-manually downloaded installation:
+Verify the published key fingerprint above and both package hashes. Install
+the public key in `/etc/apk/keys/` first. In **System → Software → Upload
+Package**, upload `pangolin-cli` first and `luci-app-pangolin` second. Keep the
+official OpenWrt repositories enabled so APK can resolve kernel and LuCI
+dependencies.
 
-1. Install and verify the public key as shown above.
-2. Download `packages-sha256sums`, `newt-1.18.1-r2.apk`, and
-   `luci-app-newt-1.0.0-r2.apk` from the latest release.
-3. Verify both APK hashes against `packages-sha256sums` on a trusted computer.
-4. In **System → Software → Upload Package**, upload and install `newt` first,
-   then `luci-app-newt`.
-
-OpenWrt 25.12 LuCI releases have had an outstanding issue where uploaded
-untrusted APKs are rejected. Installing this repository's key first makes the
-published APKs trusted. If the upload UI still rejects a package, copy both
-files to `/tmp` and use the package manager directly:
+If the UI cannot solve the two local files as one transaction, copy them to
+`/tmp` and run:
 
 ```sh
-apk add /tmp/newt-1.18.1-r2.apk \
-  /tmp/luci-app-newt-1.0.0-r2.apk
+apk add /tmp/pangolin-cli-0.18.1-r1.apk \
+  /tmp/luci-app-pangolin-1.0.0-r1.apk
 ```
 
-Use `--allow-untrusted` only for a local development build whose checksum you
-verified out of band. Never use `opkg` or Android APK tooling; OpenWrt 25.12
-uses APK v3.
+## Configure the site
 
-## Configure Newt in LuCI
+In Pangolin, create or select a site and copy its ID and secret. In
+**Services → Pangolin**:
 
-The endpoint is the externally reachable Pangolin HTTPS URL. HTTPS defaults to
-port 443, so no port is needed in the normal case:
+1. Set **Pangolin endpoint** to the public HTTPS URL, such as
+   `https://pangolin.example.com`. Add `:8443` only if that is the public
+   Pangolin HTTPS port.
+2. Select **Existing Site ID and secret**, paste both values, and enable the
+   site connector.
+3. Save. The page should progress from **Starting / reconnecting** to
+   **Connected**, and log messages should appear on the same page.
 
-```text
-https://pangolin.example.com
-```
+The alternative **One-time provisioning key** mode requires a provisioning key
+and a unique site name. After Newt receives permanent credentials, the package
+persists them to root-only UCI and clears the one-time key. Newt 1.18.1 does
+not expose a credential-free “join and wait for administrator approval” flow.
 
-Include a port in the same URL only when Pangolin listens on a non-default
-external port:
-
-```text
-https://pangolin.example.com:8443
-```
-
-Choose one setup method:
-
-- **Existing Newt ID and secret:** create/select the site in Pangolin and copy
-  the ID and secret shown by its Newt configuration into LuCI.
-- **One-time provisioning key:** enter the Pangolin provisioning key and a
-  unique site name. Newt exchanges the key for permanent credentials; the
-  OpenWrt helper stores those credentials and clears the one-time key.
-
-Newt 1.18.1 supports those two authentication forms. Its released config and
-registration protocol do not expose an approval-only, credential-free join
-mode. If the Pangolin deployment does not offer provisioning keys in its UI,
-use the ID/secret generated by the normal **Create Site** flow.
-
-Enable **Newt**, save, and confirm that the status changes from
-**Starting / reconnecting** to **Connected**. Pangolin resources and access
-rules are intentionally managed in Pangolin, not LuCI.
+Pangolin continues to manage resources, targets, access rules, and clients.
+The LuCI app intentionally manages only the local connector.
 
 ## Verify operation
 
 ```sh
-/etc/init.d/newt enabled
-ubus call service list '{"name":"newt"}'
-logread -e newt
-test -e /var/run/newt/healthy && echo connected
+/etc/init.d/pangolin enabled
+ubus call service list '{"name":"pangolin"}'
+logread -e pangolin
+ls -l /etc/config/pangolin /var/run/pangolin/site.json
 ```
 
-The service runs under `procd`, starts at boot, and uses a bounded crash-loop
-restart policy. LuCI displays the same service state and sanitized system log.
+The service instance is named `site`. `procd` restarts it after failures, and
+stdout/stderr go to OpenWrt logd.
+
+## Optional native-main interface
+
+Normal site mode uses Newt's userspace netstack and creates no host NIC. That
+is the upstream default and the recommended reverse-proxy configuration.
+
+The advanced **Native main tunnel (experimental)** setting asks Newt to create
+a Linux TUN. When **Register native interface with OpenWrt** is also enabled,
+the package creates:
+
+- Linux device and netifd network named `pangolin` by default;
+- **Network → Interfaces → pangolin**; and
+- firewall4 zone `pangolin` with initial input/output `ACCEPT` and forwarding
+  `REJECT`.
+
+Input is initially accepted because the site proxy listeners bind to the
+tunnel address. Review that policy for the router services in scope. Existing
+administrator changes to the named zone are preserved on later syncs.
+
+This is not the default because upstream issue #403 reports a `native-main`
+handshake failure. Treat it as experimental until upstream closes that gap.
+Check it with:
+
+```sh
+ip link show pangolin
+uci show network.pangolin
+uci show firewall.pangolin
+```
+
+## Diagnosing save or start failures
+
+The RPC backend returns validation and service output to LuCI instead of only
+showing **Operation failed**. After an upgrade, restart rpcd and hard-refresh
+the browser if an old cached view remains:
+
+```sh
+apk -U add pangolin-cli luci-app-pangolin
+/etc/init.d/rpcd restart
+/etc/init.d/pangolin restart
+logread -e pangolin
+ubus -v list luci.pangolin
+```
+
+Common causes are an endpoint without `https://`, a missing half of the
+ID/secret pair, an invalid path or interface name, or enabling native-main
+without `/dev/net/tun`. For the legacy app, install `newt-1.18.1-r3` and
+`luci-app-newt-1.0.0-r3` together; those revisions include the same actionable
+RPC error handling.
+
+## Migrate from the legacy Newt app
+
+1. Obtain the endpoint, site ID, and secret from a secure source; LuCI never
+   reveals stored secrets.
+2. Install and configure `luci-app-pangolin`, but leave it disabled.
+3. Disable **Services → Pangolin Newt**.
+4. Enable **Services → Pangolin** and verify a connected site.
+5. Remove the legacy pair only after confirming real proxy traffic.
+
+Never run two connectors with the same site credentials.
 
 ## Update or remove
 
-To update only this user-installed application, refresh indexes and ask APK to
-reinstall the current feed versions:
+Update only the user-installed packages rather than indiscriminately upgrading
+the OpenWrt base system:
 
 ```sh
-apk -U add newt luci-app-newt
+apk update
+apk add --upgrade pangolin-cli luci-app-pangolin
 ```
 
-Do not run an indiscriminate `apk upgrade` on OpenWrt. Upgrade the OpenWrt base
-system with a coherent sysupgrade image.
-
-To remove the integration while retaining a backup of its UCI configuration:
+Before removal, save the root-only UCI file if needed:
 
 ```sh
-/etc/init.d/newt stop
-cp -p /etc/config/newt /root/newt.config.backup 2>/dev/null || true
-apk del luci-app-newt newt
+/etc/init.d/pangolin stop
+cp -p /etc/config/pangolin /root/pangolin.config.backup
+apk del luci-app-pangolin pangolin-cli
 ```
+
+Named network/firewall sections are not silently deleted because an
+administrator may have attached policy to them. Remove them manually only
+after confirming they are unused.

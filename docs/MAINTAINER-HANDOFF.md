@@ -1,79 +1,121 @@
 # Maintainer handoff
 
-This is the operational context needed to continue the project without
-re-discovering its packaging, security, and release decisions. It was last
-reviewed on 2026-10-13.
+This is the minimum context a future engineer or agent needs before modifying
+or releasing the project. Last reviewed: 2026-10-14.
 
 ## Current baseline
 
 | Item | Pin |
 | --- | --- |
 | OpenWrt stable | 25.12.5 |
-| OpenWrt target | `rockchip/armv8` |
-| Package architecture | `aarch64_generic` |
+| Target / package arch | `rockchip/armv8` / `aarch64_generic` |
 | NanoPi profile | `friendlyarm_nanopi-r5c` |
 | Package format | APK v3 |
-| Newt | 1.18.1 |
-| Newt source SHA-256 | `e3e66632a3ca2eeb950cb74e087ca837e7eee98a9e0816fcc1e4528a355ccd18` |
-| Go toolchain | 1.26.9 |
-| Package revisions | `newt-1.18.1-r2`, `luci-app-newt-1.0.0-r2` |
+| Pangolin CLI | 0.18.1, SHA-256 `568fcbf62a1c485d8cec617c635ae5769ff5d6729bcf412a7f0d13efb3d498ad` |
+| Embedded Newt | 1.18.1, SHA-256 `e3e66632a3ca2eeb950cb74e087ca837e7eee98a9e0816fcc1e4528a355ccd18` |
+| Embedded OLM | 1.10.1, SHA-256 `9de2a1b9daa21ce20b6642c2b948ab9616690800dbc0094835d2f711e3295f1a` |
+| Go | 1.26.9 |
+| Primary packages | `pangolin-cli-0.18.1-r1`, `luci-app-pangolin-1.0.0-r1` |
+| Compatibility packages | `newt-1.18.1-r3`, `luci-app-newt-1.0.0-r3` |
 
-Newt 1.18.1 was still the latest upstream release at the review date. Go
-1.27 exists, but Newt declares Go 1.26 and the pinned OpenWrt 25.12 package
-feed supplies `golang1.26/host`; the external Docker build therefore uses the
-latest compatible 1.26 patch rather than silently changing toolchain families.
+At review time the official CLI release was 0.18.1. Standalone Newt's latest
+release was 1.18.1 and its README said it was being phased out for the Pangolin
+CLI. Recheck primary release pages before every release.
+
+## Product decision
+
+The primary app manages one official Pangolin site connector:
+
+```text
+pangolin up site --config-file /var/run/pangolin/site.json
+```
+
+It does not present a separate `pangolin up client` mode. The user clarified
+that they want the current Pangolin site workflow kept close to upstream, with
+LuCI for setup, service management, monitoring, and logs. Pangolin owns all
+resource and access configuration.
+
+The site uses Newt's userspace netstack by default and therefore has no host
+NIC. Upstream `nativeMain` is exposed only as an advanced, off-by-default
+option. When selected, `pangolin-network` registers the requested TUN as
+`network.pangolin` and creates a firewall4 zone. Upstream Newt issue #403 still
+reports native-main handshake failure; do not describe that path as generally
+supported until upstream resolves it.
 
 ## Repository map
 
-- `packages/newt/`: Go package recipe, UCI defaults, `procd` service, runtime
-  config renderer, provisioning credential sync, and secure CLI helper.
-- `packages/luci-app-newt/`: LuCI JavaScript view, ucode `rpcd` object, menu,
-  and least-privilege ACL.
-- `examples/uci-defaults/90-newt`: ImageBuilder configuration when APKs are
-  already embedded.
-- `examples/uci-defaults/99-newt-from-feed`: public Firmware Selector script;
-  creates a temporary late-boot service because early `uci-defaults` has no
-  reliable network.
-- `scripts/`: pinned SDK, ImageBuilder, Docker, signing, and verification
-  entry points.
-- `tests/`: static checks plus APK/feed/ELF/payload verification.
-- `keys/openwrt-newt-public-key.pem`: stable public repository key.
-- `private-key.pem`: ignored local signing key. It must never be committed,
-  printed, copied into an artifact, or retained in a shared SDK cache.
+- `packages/pangolin-cli/`: CLI recipe, exact nested source archives, security
+  patches, UCI, procd, site wrapper, optional network sync, credential sync,
+  and headless configuration helper.
+- `packages/luci-app-pangolin/`: LuCI form/status/log view, rpcd ucode API, ACL,
+  and menu entry.
+- `packages/newt/`, `packages/luci-app-newt/`: compatibility packages. Revision
+  r3 adds actionable RPC/service errors and credential-file hardening.
+- `examples/uci-defaults/90-pangolin`: setup when APKs are in the image.
+- `examples/uci-defaults/99-pangolin-from-feed`: Firmware Selector late-network
+  signed-feed bootstrap.
+- `scripts/`: pinned SDK/ImageBuilder, signing, Docker, and artifact checks.
+- `tests/`: static, network policy, APK/feed/ELF, target-ucode verification.
+- `keys/openwrt-newt-public-key.pem`: stable public feed key.
+- `private-key.pem`: ignored signing secret; never display or commit it.
 
-## Runtime design
+## Runtime contract
 
-`luci-app-newt` depends on `newt`; users install one LuCI package name. The
-architecture-independent UI calls the `luci.newt` ucode object through ubus
-JSON-RPC. That object exposes only allowlisted methods and never returns secret
-values. UCI state is persisted in `/etc/config/newt` with mode `0600`.
+`/etc/init.d/pangolin` owns exactly one named `site` procd instance. Keep that
+name synchronized with `serviceInfo()` in `luci.pangolin`; a prior draft looked
+for `main`, which falsely reported a running connector as stopped.
 
-The init script validates configuration, renders Newt's JSON schema to
-`/var/run/newt/config.json` under umask `077`, and gives only that path to the
-process. `procd` captures stdout/stderr, applies a bounded respawn policy, and
-starts at boot. `/var/run/newt/healthy` is the connected-state signal.
+- UCI section: `pangolin.main`.
+- Runtime JSON: `/var/run/pangolin/site.json`.
+- Health file: `/var/run/pangolin/site-healthy`.
+- Start-time file: `/var/run/pangolin/site-started`.
+- Log tag: `pangolin`.
+- Command wrapper: `/usr/libexec/pangolin-site-run`.
 
-For provisioning, Newt replaces the one-time key in the runtime JSON with its
-generated ID/secret. The supervised ucode helper copies the permanent values
-back into UCI, switches to credential mode, and removes the key. The upstream
-source patch removes debug messages that otherwise expose auth tokens or the
-provisioning response body.
+The wrapper sets a private runtime home and update opt-outs. The CLI is also
+linked with `ManagedBy=openwrt`; APK is the only supported updater.
 
-`NEWT_SYSTEM_SUBSTRATE=CONTAINER` is intentionally supplied to disable Newt's
-in-place self-updater. APK owns `/usr/bin/newt`; self-modification would break
-package integrity and reproducibility.
+`pangolin-network sync` creates named netifd/firewall sections only when the
+site, native-main, and local network management are all enabled. New zones
+start input/output `ACCEPT`, forwarding `REJECT`; later syncs preserve an
+administrator's zone policy. No forwarding or masquerading is created.
 
-## Enrollment decision
+## RPC and the original “Operation failed” report
 
-Newt 1.18.1 supports either an existing ID/secret or a provisioning key plus
-site name. The released Newt config schema and registration code contain no
-approval-only anonymous join mode. The LuCI app and first-boot examples expose
-both supported forms. Prefer a unique, scoped, short-lived provisioning key for
-zero-touch images. Never publish a credential-bearing firmware image.
+The old LuCI app showed only **Operation failed** and no logs. There was no
+device-side ubus status to prove a single root cause. The code hardens every
+observed boundary:
 
-## Build and verification
+- RPC declarations use `reject: true` and render transport exceptions.
+- ucode `fs.popen()` receives command strings, not argv arrays (the latter can
+  compile but fail at runtime on OpenWrt ucode).
+- Service actions use fixed allowlisted helpers and return captured output.
+- Init validation writes the same actionable message to stderr and logd.
+- The procd status lookup uses the actual `site` instance name.
 
-On a workstation with Rancher Desktop or Docker and binfmt/QEMU support:
+Do not regress these behaviors or claim an unverified historic root cause.
+
+## Security boundaries
+
+- UCI and runtime credentials must remain mode `0600`.
+- Secret values never return from RPC; logs are re-redacted at the boundary.
+- Newt's patch removes token/provisioning bodies from logs/errors and writes
+  generated credentials as `0600`.
+- OLM's patch changes its compiled-in API socket from `0666` to `0600`. The app
+  does not manage client mode, but OLM is still embedded in the official CLI.
+- Firmware images containing credentials are secrets even after first boot.
+- Never expose, print, or commit `private-key.pem`.
+
+Rebase and dry-run nested source patches on every upstream version update.
+
+## Enrollment
+
+The app accepts either an existing Site ID/secret or a one-time provisioning
+key plus site name. Newt 1.18.1 has no anonymous approval-only enrollment. A
+credential-bearing Firmware Selector image remains recoverable; recommend a
+unique, short-lived provisioning key or post-deploy mode-0600 helper file.
+
+## Build and test
 
 ```sh
 ./tests/check.sh
@@ -82,66 +124,37 @@ On a workstation with Rancher Desktop or Docker and binfmt/QEMU support:
 ./scripts/build-r5c-image-in-docker.sh
 ```
 
-The authoritative verification includes:
+The artifact verifier must continue checking all four APKs, signed feed,
+AArch64 ELF execution, exact dependency metadata and modes, embedded versions,
+and both target-compiled ucode backends. The R5C image manifest must contain
+`pangolin-cli` and `luci-app-pangolin`.
 
-- the pinned Newt archive hash and security patch;
-- the official OpenWrt SDK and ImageBuilder hashes;
-- both APK signatures and signed `packages.adb`;
-- exact package names, versions, dependencies, architecture, and modes;
-- AArch64 ELF metadata and `newt --version` execution under QEMU;
-- compilation of the ucode RPC backend with the target OpenWrt runtime;
-- NanoPi R5C ext4 and squashfs sysupgrade images and package manifest.
+Container tests cannot prove real Pangolin enrollment, reverse-proxy traffic,
+procd behavior on the board, or native-main viability. Complete the physical
+acceptance list in `BUILDING.md` before calling a public release production
+ready.
 
-The remaining acceptance test is physical hardware. Flash or install on an
-R5C, validate both credential modes, kill Newt to exercise respawn, reboot,
-confirm reconnection, inspect LuCI network responses for secret absence, and
-pass real HTTP/TCP traffic through a Pangolin resource.
+## Release procedure
 
-## Release process
+1. Recheck official OpenWrt, CLI, Newt, and OLM releases and relevant issues.
+2. Update versions, hashes, Go/toolchain pins, schemas, docs, and expectations
+   as one coherent change.
+3. Run all tests, then pass physical R5C acceptance.
+4. Commit/push main and wait for green CI.
+5. Tag only the verified commit using
+   `v<pangolin-version>-openwrt<revision>`.
+6. Download the release and independently verify its feed, signatures, hashes,
+   and image manifest.
 
-1. Check official OpenWrt downloads and the upstream Newt latest release.
-2. For a Newt bump, update its version and archive hash in
-   `packages/newt/Makefile`, rebase the log-redaction patch, and compare every
-   `fileSettings` field in upstream `newtconfig/newtconfig.go` with
-   `docs/CONFIGURATION.md` and `newt.init`.
-3. Update hard-coded artifact expectations in the verification and image
-   scripts. Increment `PKG_RELEASE` for packaging-only changes; reset it for a
-   new upstream version.
-4. For an OpenWrt bump, update both official archive names and SHA-256 values,
-   the cache key, documentation, and expected target manifest. Never reuse an
-   SDK or package feed across OpenWrt release lines without rebuilding.
-5. Run all four commands in the previous section from a clean checkout.
-6. Commit and push `main`; wait for CI.
-7. Tag `v<newt-version>-openwrt<revision>` only after the branch build is
-   green. A tag build signs and publishes the feed, APKs, images, checksums,
-   and manifest to the GitHub release.
-8. Download the public release artifacts and verify the signed feed again,
-   independently of the Actions workspace.
+CI secret `OPENWRT_APK_PRIVATE_KEY_B64` is the stable feed key. Key rotation
+requires an explicit migration for installed routers and all first-boot key
+fingerprints.
 
-The repository secret `OPENWRT_APK_PRIVATE_KEY_B64` contains the stable private
-key. CI decodes it only into the runner temp directory. The build copies it
-into the SDK only for signing and deletes it with a trap before the SDK cache
-is saved. Key rotation requires publishing the new public key and fingerprint,
-updating both first-boot scripts/docs, and providing an explicit migration path
-for already-installed routers.
+## Primary upstream references
 
-## Documentation policy
-
-The README is intentionally short. Canonical detailed documentation remains in
-`docs/` instead of a separate GitHub Wiki so it is versioned with each release,
-reviewed in the same pull request, and cannot drift from the code. If a Wiki is
-added later, generate it from these files rather than maintaining a second
-manual source.
-
-## Known constraints
-
-- Only `aarch64_generic` packages and R5C images are currently published.
-- The public Firmware Selector cannot resolve this external package in its
-  package box; its first-boot script adds the signed feed after networking is
-  available.
-- The endpoint is HTTPS-only by policy. A nonstandard port belongs in the URL.
-- The LuCI package manager has had problems installing untrusted uploaded APKs
-  on OpenWrt 25.12. Install the public key first or use the signed feed.
-- Advanced native WireGuard, Docker discovery, auth-daemon, mTLS, and metrics
-  controls mirror upstream but have not all been exercised on physical R5C
-  hardware. Userspace networking remains the default.
+- Pangolin CLI: <https://github.com/fosrl/cli>
+- Newt: <https://github.com/fosrl/newt>
+- Install a site: <https://docs.pangolin.net/manage/sites/install-site>
+- Configure a site: <https://docs.pangolin.net/manage/sites/configure-site>
+- Install Newt: <https://docs.pangolin.net/manage/sites/install-newt>
+- Newt native-main issue #403: <https://github.com/fosrl/newt/issues/403>

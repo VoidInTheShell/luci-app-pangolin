@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=newt
 PKG_VERSION:=1.18.1
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/fosrl/newt/tar.gz/refs/tags/$(PKG_VERSION)?
@@ -58,6 +58,7 @@ define Package/newt/install
 	$(INSTALL_BIN) ./files/newt.init $(1)/etc/init.d/newt
 	$(INSTALL_BIN) ./files/newt-run $(1)/usr/libexec/newt-run
 	$(INSTALL_BIN) ./files/newt-sync-credentials $(1)/usr/libexec/newt-sync-credentials
+	$(INSTALL_BIN) ./files/newt-service-action $(1)/usr/libexec/newt-service-action
 	$(INSTALL_BIN) ./files/configure-newt $(1)/usr/libexec/configure-newt
 	$(INSTALL_CONF) ./files/newt.config $(1)/etc/config/newt
 	chmod 0600 $(1)/etc/config/newt

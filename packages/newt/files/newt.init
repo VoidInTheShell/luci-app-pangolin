@@ -8,6 +8,11 @@ RUNTIME_DIR=/var/run/newt
 RUNTIME_CONFIG="$RUNTIME_DIR/config.json"
 HEALTH_FILE="$RUNTIME_DIR/healthy"
 
+log_error() {
+	logger -t newt -p daemon.err "$*"
+	echo "newt: $*" >&2
+}
+
 append_json_string() {
 	local uci_name="$1"
 	local json_name="$2"
@@ -125,13 +130,13 @@ validate_configuration() {
 	config_get name main name
 
 	[ -n "$endpoint" ] || {
-		echo "newt: Pangolin endpoint is required" >&2
+		log_error "Pangolin endpoint is required"
 		return 1
 	}
 	case "$endpoint" in
 		https://?*) ;;
 		*)
-			echo "newt: Pangolin endpoint must be a complete https:// URL" >&2
+			log_error "Pangolin endpoint must be a complete https:// URL"
 			return 1
 			;;
 	esac
@@ -139,18 +144,18 @@ validate_configuration() {
 	case "$auth_mode" in
 		provisioning)
 			[ -n "$provisioning_key" ] && [ -n "$name" ] || {
-				echo "newt: provisioning key and site name are required" >&2
+				log_error "provisioning key and site name are required"
 				return 1
 			}
 			;;
 		credentials)
 			[ -n "$id" ] && [ -n "$secret" ] || {
-				echo "newt: Newt ID and secret are required" >&2
+				log_error "Newt ID and secret are required"
 				return 1
 			}
 			;;
 		*)
-			echo "newt: authentication mode must be credentials or provisioning" >&2
+			log_error "authentication mode must be credentials or provisioning"
 			return 1
 			;;
 	esac

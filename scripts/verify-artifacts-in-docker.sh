@@ -6,6 +6,8 @@ openwrt_version="${OPENWRT_VERSION:-25.12.5}"
 sdk_name="openwrt-sdk-${openwrt_version}-rockchip-armv8_gcc-14.3.0_musl.Linux-x86_64"
 artifacts="${repo_root}/dist/openwrt-${openwrt_version}/aarch64_generic"
 verify_root="${repo_root}/dist/verify-root"
+host_uid="$(id -u)"
+host_gid="$(id -g)"
 
 if [ -d "${repo_root}/.cache/${sdk_name}" ]; then
 	cache_mount=( -v "${repo_root}/.cache:/openwrt-cache" )
@@ -57,7 +59,8 @@ cp /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/index.json \
   /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/newt-1.18.1-r1.apk
 \"\$apk\" extract ${verify_args} \
   --destination /workspace/dist/verify-root/luci-root \
-  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-newt-1.0.0-r1.apk"
+  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-newt-1.0.0-r1.apk
+chown -R ${host_uid}:${host_gid} /workspace/dist/verify-root"
 
 python3 "$repo_root/tests/verify_artifacts.py" "$verify_root"
 

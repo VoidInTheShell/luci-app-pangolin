@@ -15,8 +15,8 @@ else
 	cache_mount=( -v openwrt-newt-sdk-cache:/openwrt-cache )
 fi
 
-newt_apk="${artifacts}/newt-1.18.1-r1.apk"
-luci_apk="${artifacts}/luci-app-newt-1.0.0-r1.apk"
+newt_apk="${artifacts}/newt-1.18.1-r2.apk"
+luci_apk="${artifacts}/luci-app-newt-1.0.0-r2.apk"
 
 for file in "$newt_apk" "$luci_apk" "$artifacts/packages.adb" "$artifacts/index.json"; do
 	[ -s "$file" ] || {
@@ -43,23 +43,23 @@ docker run --rm --platform linux/amd64 \
 sdk=/openwrt-cache/${sdk_name}
 apk=\"\$sdk/staging_dir/host/bin/apk\"
 \"\$apk\" verify ${verify_args} \
-  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/newt-1.18.1-r1.apk \
-  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-newt-1.0.0-r1.apk \
+  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/newt-1.18.1-r2.apk \
+  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-newt-1.0.0-r2.apk \
   /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/packages.adb
 \"\$apk\" adbdump --format json \
-  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/newt-1.18.1-r1.apk \
+  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/newt-1.18.1-r2.apk \
   > /workspace/dist/verify-root/newt.json
 \"\$apk\" adbdump --format json \
-  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-newt-1.0.0-r1.apk \
+  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-newt-1.0.0-r2.apk \
   > /workspace/dist/verify-root/luci.json
 cp /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/index.json \
   /workspace/dist/verify-root/feed.json
 \"\$apk\" extract ${verify_args} \
   --destination /workspace/dist/verify-root/newt-root \
-  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/newt-1.18.1-r1.apk
+  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/newt-1.18.1-r2.apk
 \"\$apk\" extract ${verify_args} \
   --destination /workspace/dist/verify-root/luci-root \
-  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-newt-1.0.0-r1.apk
+  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-newt-1.0.0-r2.apk
 chown -R ${host_uid}:${host_gid} /workspace/dist/verify-root"
 
 python3 "$repo_root/tests/verify_artifacts.py" "$verify_root"

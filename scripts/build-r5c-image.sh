@@ -71,6 +71,11 @@ mapfile -t images < <(find "$imagebuilder_dir/bin/targets/rockchip/armv8" \
 	exit 1
 }
 
+# Do not retain images or manifests from an earlier package revision in the
+# release directory when rebuilding incrementally.
+rm -f "$output_dir"/*-newt-sysupgrade.img.gz \
+	"$output_dir"/*-newt.manifest "$output_dir/images-sha256sums"
+
 for image in "${images[@]}"; do
 	base="$(basename "$image")"
 	destination="${base%-sysupgrade.img.gz}-newt-sysupgrade.img.gz"
@@ -83,11 +88,11 @@ manifest="$(find "$imagebuilder_dir/bin/targets/rockchip/armv8" \
 	echo 'ImageBuilder did not produce the NanoPi R5C package manifest.' >&2
 	exit 1
 }
-grep -q '^newt - 1\.18\.1-r1$' "$manifest" || {
+grep -q '^newt - 1\.18\.1-r2$' "$manifest" || {
 	echo 'The R5C image manifest does not contain the expected Newt package.' >&2
 	exit 1
 }
-grep -q '^luci-app-newt - 1\.0\.0-r1$' "$manifest" || {
+grep -q '^luci-app-newt - 1\.0\.0-r2$' "$manifest" || {
 	echo 'The R5C image manifest does not contain the expected LuCI package.' >&2
 	exit 1
 }

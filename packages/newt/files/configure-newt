@@ -43,14 +43,18 @@ esac
 : "${PANGOLIN_ENDPOINT:?PANGOLIN_ENDPOINT is required}"
 
 case "$PANGOLIN_ENDPOINT" in
-	https://*) ;;
+	https://?*) ;;
 	*)
-		echo 'PANGOLIN_ENDPOINT must be an https:// URL.' >&2
+		echo 'PANGOLIN_ENDPOINT must be a complete https:// URL.' >&2
 		exit 1
 		;;
 esac
 
 if [ -n "${NEWT_PROVISIONING_KEY:-}" ]; then
+	if [ -n "${NEWT_ID:-}" ] || [ -n "${NEWT_SECRET:-}" ]; then
+		echo 'Set a provisioning key OR an ID/secret pair, not both.' >&2
+		exit 1
+	fi
 	: "${NEWT_SITE_NAME:?NEWT_SITE_NAME is required with NEWT_PROVISIONING_KEY}"
 	uci -q set newt.main='newt'
 	uci -q set newt.main.endpoint="$PANGOLIN_ENDPOINT"
@@ -60,6 +64,11 @@ if [ -n "${NEWT_PROVISIONING_KEY:-}" ]; then
 	uci -q delete newt.main.id || true
 	uci -q delete newt.main.secret || true
 else
+	if { [ -n "${NEWT_ID:-}" ] && [ -z "${NEWT_SECRET:-}" ]; } ||
+	   { [ -z "${NEWT_ID:-}" ] && [ -n "${NEWT_SECRET:-}" ]; }; then
+		echo 'NEWT_ID and NEWT_SECRET must be supplied together.' >&2
+		exit 1
+	fi
 	: "${NEWT_ID:?NEWT_ID or NEWT_PROVISIONING_KEY is required}"
 	: "${NEWT_SECRET:?NEWT_SECRET is required with NEWT_ID}"
 	uci -q set newt.main='newt'

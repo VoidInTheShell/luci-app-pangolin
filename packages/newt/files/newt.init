@@ -128,18 +128,32 @@ validate_configuration() {
 		echo "newt: Pangolin endpoint is required" >&2
 		return 1
 	}
+	case "$endpoint" in
+		https://?*) ;;
+		*)
+			echo "newt: Pangolin endpoint must be a complete https:// URL" >&2
+			return 1
+			;;
+	esac
 
-	if [ "$auth_mode" = "provisioning" ]; then
-		[ -n "$provisioning_key" ] && [ -n "$name" ] || {
-			echo "newt: provisioning key and site name are required" >&2
+	case "$auth_mode" in
+		provisioning)
+			[ -n "$provisioning_key" ] && [ -n "$name" ] || {
+				echo "newt: provisioning key and site name are required" >&2
+				return 1
+			}
+			;;
+		credentials)
+			[ -n "$id" ] && [ -n "$secret" ] || {
+				echo "newt: Newt ID and secret are required" >&2
+				return 1
+			}
+			;;
+		*)
+			echo "newt: authentication mode must be credentials or provisioning" >&2
 			return 1
-		}
-	else
-		[ -n "$id" ] && [ -n "$secret" ] || {
-			echo "newt: Newt ID and secret are required" >&2
-			return 1
-		}
-	fi
+			;;
+	esac
 }
 
 start_service() {

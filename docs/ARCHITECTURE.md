@@ -79,7 +79,8 @@ The browser does not receive raw UCI access. Its ACL grants only these methods:
 - read: `get_config`, `get_status`, `get_logs`;
 - write: `set_config`, `service_action`.
 
-The rpcd plugin allowlists every accepted setting and validates URLs, paths,
+The rpcd plugin allowlists every accepted setting and requires an HTTPS
+control-plane URL in addition to validating paths,
 durations, integer bounds, lists, booleans, and service actions. Log output is
 redacted again at the server boundary even though Newt is not expected to log
 credentials.

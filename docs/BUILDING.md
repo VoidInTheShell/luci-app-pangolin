@@ -93,8 +93,8 @@ database before a release is published.
 Copy the two APKs to `/tmp` on a matching OpenWrt 25.12 R5C and install them:
 
 ```sh
-apk add --allow-untrusted /tmp/newt-1.18.1-r1.apk \
-  /tmp/luci-app-newt-1.0.0-r1.apk
+apk add --allow-untrusted /tmp/newt-1.18.1-r2.apk \
+  /tmp/luci-app-newt-1.0.0-r2.apk
 ```
 
 `--allow-untrusted` is appropriate only for a one-off development build whose
@@ -110,8 +110,9 @@ and publishes the generated `packages.adb` beside the APK files.
 On the router:
 
 ```sh
-install -m 0644 /tmp/openwrt-newt-public-key.pem \
+cp /tmp/openwrt-newt-public-key.pem \
   /etc/apk/keys/openwrt-newt-public-key.pem
+chmod 0644 /etc/apk/keys/openwrt-newt-public-key.pem
 echo 'https://github.com/alexanderjlynn/openwrt-newt/releases/latest/download/packages.adb' \
   > /etc/apk/repositories.d/openwrt-newt.list
 apk update

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-r5c:
@@ -16,14 +16,14 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.9'
           cache: false
 
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           platforms: arm64
 
@@ -32,13 +32,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential ca-certificates curl file gawk gettext \
-            jq libncurses-dev python3 python3-setuptools rsync unzip wget zstd
+            jq libncurses-dev python3 python3-setuptools rsync shellcheck \
+            unzip wget zstd
 
       - name: Static checks
         run: ./tests/check.sh
 
       - name: Restore SDK and download caches
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache
           key: openwrt-sdk-25.12.5-rockchip-armv8-v1
@@ -71,16 +72,30 @@ jobs:
         run: ./scripts/build-r5c-image.sh
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: openwrt-newt-25.12.5-aarch64_generic
           path: dist/openwrt-25.12.5/aarch64_generic/
           if-no-files-found: error
 
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build-r5c
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download verified build artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: openwrt-newt-25.12.5-aarch64_generic
+          path: dist/openwrt-25.12.5/aarch64_generic
+
       - name: Attach release artifacts
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
             gh release create "${GITHUB_REF_NAME}" \

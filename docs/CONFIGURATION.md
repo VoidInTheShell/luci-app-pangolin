@@ -6,7 +6,7 @@ The table below makes that translation explicit.
 
 | LuCI area | UCI option | Newt JSON key | Purpose |
 | --- | --- | --- | --- |
-| General | `endpoint` | `endpoint` | Public Pangolin URL |
+| General | `endpoint` | `endpoint` | Public Pangolin HTTPS URL, with optional non-default port |
 | General | `id` | `id` | Existing Newt identifier |
 | General | `secret` | `secret` | Existing Newt secret |
 | General | `provisioning_key` | `provisioningKey` | One-time site provisioning key |

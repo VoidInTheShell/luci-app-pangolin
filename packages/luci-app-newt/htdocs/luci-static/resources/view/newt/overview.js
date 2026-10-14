@@ -211,7 +211,7 @@ function createForm(config) {
 	section.tab('process', _('Process'));
 
 	addFlag(section, 'general', 'enabled', _('Enable Newt'), _('Run the connector and restart it automatically if it exits.'));
-	let endpoint = addValue(section, 'general', 'endpoint', _('Pangolin endpoint'), _('The public URL of the Pangolin server.'), 'url', 'https://app.pangolin.net');
+	let endpoint = addValue(section, 'general', 'endpoint', _('Pangolin endpoint'), _('The public HTTPS URL of the Pangolin server. Include :port only when using a non-default port.'), 'url', 'https://app.pangolin.net');
 	endpoint.rmempty = false;
 
 	let mode = section.taboption('general', form.ListValue, 'auth_mode', _('Setup method'));

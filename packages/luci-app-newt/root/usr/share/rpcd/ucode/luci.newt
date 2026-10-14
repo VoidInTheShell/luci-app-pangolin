@@ -80,8 +80,8 @@ function validate(config) {
 			if (!validPath(value))
 				return "CA certificate paths must be absolute and may not contain '..' components.";
 
-	if (config.endpoint != null && !match(config.endpoint, /^https?:\/\/[^\s]+$/))
-		return 'Pangolin endpoint must be an HTTP or HTTPS URL.';
+	if (config.endpoint != null && !match(config.endpoint, /^https:\/\/[^\s]+$/))
+		return 'Pangolin endpoint must be an HTTPS URL.';
 
 	if (config.auth_mode != null && config.auth_mode != 'credentials' && config.auth_mode != 'provisioning')
 		return 'Authentication mode must be credentials or provisioning.';

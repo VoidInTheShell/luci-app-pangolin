@@ -157,6 +157,10 @@ if [ -n "${OPENWRT_APK_PRIVATE_KEY_FILE:-}" ]; then
 	done
 fi
 
+# Prevent an incremental local build from publishing superseded package
+# revisions alongside the current pair. CI starts clean, but releases must be
+# equally deterministic when reproduced from a developer workstation.
+rm -f "$output_dir"/newt-*.apk "$output_dir"/luci-app-newt-*.apk
 install -m 0644 "$newt_apk" "$output_dir/"
 install -m 0644 "$luci_apk" "$output_dir/"
 

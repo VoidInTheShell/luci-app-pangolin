@@ -22,20 +22,20 @@ newt_info = newt_meta["info"]
 luci_info = luci_meta["info"]
 
 assert newt_info["name"] == "newt"
-assert newt_info["version"] == "1.18.1-r1"
+assert newt_info["version"] == "1.18.1-r2"
 assert newt_info["arch"] == "aarch64_generic"
 assert newt_info["license"] == "AGPL-3.0-only"
 assert {"ca-bundle", "ucode", "ucode-mod-fs", "ucode-mod-uci"} <= set(newt_info["depends"])
 
 assert luci_info["name"] == "luci-app-newt"
-assert luci_info["version"] == "1.0.0-r1"
+assert luci_info["version"] == "1.0.0-r2"
 assert luci_info["arch"] == "noarch"
 assert {"luci-base", "newt", "rpcd-mod-ucode"} <= set(luci_info["depends"])
 
 assert feed_meta == {
     "version": 2,
     "architecture": "aarch64_generic",
-    "packages": {"luci-app-newt": "1.0.0-r1", "newt": "1.18.1-r1"},
+    "packages": {"luci-app-newt": "1.0.0-r2", "newt": "1.18.1-r2"},
 }
 
 binary = root / "newt-root/usr/bin/newt"

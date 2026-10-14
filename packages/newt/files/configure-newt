@@ -1,0 +1,80 @@
+#!/bin/sh
+set -eu
+
+usage() {
+	cat >&2 <<'EOF'
+Usage: configure-newt CONFIG_FILE
+
+The root-only CONFIG_FILE is sourced as shell syntax and must contain:
+
+  PANGOLIN_ENDPOINT='https://pangolin.example.com'
+
+and either:
+
+  NEWT_ID='...'
+  NEWT_SECRET='...'
+
+or:
+
+  NEWT_PROVISIONING_KEY='...'
+  NEWT_SITE_NAME='router-name'
+
+The file must not be group- or world-accessible.
+EOF
+	exit 2
+}
+
+[ "$#" -eq 1 ] || usage
+config_file="$1"
+[ -f "$config_file" ] || usage
+
+mode="$(stat -c '%a' "$config_file" 2>/dev/null || stat -f '%Lp' "$config_file" 2>/dev/null || true)"
+case "$mode" in
+	600|400) ;;
+	*)
+		echo "Refusing insecure configuration file mode ${mode:-unknown}; use chmod 600." >&2
+		exit 1
+		;;
+esac
+
+# shellcheck disable=SC1090
+. "$config_file"
+
+: "${PANGOLIN_ENDPOINT:?PANGOLIN_ENDPOINT is required}"
+
+case "$PANGOLIN_ENDPOINT" in
+	https://*) ;;
+	*)
+		echo 'PANGOLIN_ENDPOINT must be an https:// URL.' >&2
+		exit 1
+		;;
+esac
+
+if [ -n "${NEWT_PROVISIONING_KEY:-}" ]; then
+	: "${NEWT_SITE_NAME:?NEWT_SITE_NAME is required with NEWT_PROVISIONING_KEY}"
+	uci -q set newt.main='newt'
+	uci -q set newt.main.endpoint="$PANGOLIN_ENDPOINT"
+	uci -q set newt.main.auth_mode='provisioning'
+	uci -q set newt.main.provisioning_key="$NEWT_PROVISIONING_KEY"
+	uci -q set newt.main.name="$NEWT_SITE_NAME"
+	uci -q delete newt.main.id || true
+	uci -q delete newt.main.secret || true
+else
+	: "${NEWT_ID:?NEWT_ID or NEWT_PROVISIONING_KEY is required}"
+	: "${NEWT_SECRET:?NEWT_SECRET is required with NEWT_ID}"
+	uci -q set newt.main='newt'
+	uci -q set newt.main.endpoint="$PANGOLIN_ENDPOINT"
+	uci -q set newt.main.auth_mode='credentials'
+	uci -q set newt.main.id="$NEWT_ID"
+	uci -q set newt.main.secret="$NEWT_SECRET"
+	uci -q delete newt.main.provisioning_key || true
+	uci -q delete newt.main.name || true
+fi
+
+uci -q set newt.main.enabled='1'
+uci -q commit newt
+
+chmod 0600 /etc/config/newt
+/etc/init.d/newt enable
+/etc/init.d/newt restart
+echo 'Newt is configured. Check with: ubus call service list {"name":"newt"}'

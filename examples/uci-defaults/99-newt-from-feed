@@ -1,0 +1,46 @@
+#!/bin/sh
+set -eu
+
+# Paste this script into the OpenWrt Firmware Selector's "Script to run on
+# first boot (uci-defaults)" box. The public package is not in OpenWrt's
+# official feeds, so it is installed from the signed openwrt-newt feed.
+#
+# If WAN or DNS is not ready, this script exits nonzero. OpenWrt then retains
+# it under /etc/uci-defaults and retries it on the next boot.
+
+PANGOLIN_ENDPOINT='https://pangolin.example.com'
+NEWT_PROVISIONING_KEY=''
+NEWT_SITE_NAME=''
+
+feed_base='https://github.com/alexanderjlynn/openwrt-newt/releases/latest/download'
+key_path='/etc/apk/keys/openwrt-newt-public-key.pem'
+
+mkdir -p /etc/apk/keys /etc/apk/repositories.d
+wget -qO /tmp/openwrt-newt-public-key.pem \
+	"$feed_base/openwrt-newt-public-key.pem"
+install -m 0644 /tmp/openwrt-newt-public-key.pem "$key_path"
+rm -f /tmp/openwrt-newt-public-key.pem
+echo "$feed_base/packages.adb" > /etc/apk/repositories.d/openwrt-newt.list
+
+apk update
+apk add luci-app-newt
+
+[ -n "$NEWT_SITE_NAME" ] || NEWT_SITE_NAME="$(uci -q get system.@system[0].hostname || true)"
+[ -n "$NEWT_SITE_NAME" ] || NEWT_SITE_NAME="newt-$(cat /sys/class/net/eth0/address 2>/dev/null | tr -d ':' || true)"
+
+uci -q set newt.main='newt'
+uci -q set newt.main.endpoint="$PANGOLIN_ENDPOINT"
+uci -q set newt.main.auth_mode='provisioning'
+uci -q set newt.main.name="$NEWT_SITE_NAME"
+uci -q set newt.main.provisioning_key="$NEWT_PROVISIONING_KEY"
+if [ -n "$NEWT_PROVISIONING_KEY" ]; then
+	uci -q set newt.main.enabled='1'
+else
+	uci -q set newt.main.enabled='0'
+fi
+uci -q commit newt
+chmod 0600 /etc/config/newt
+/etc/init.d/newt enable
+[ -n "$NEWT_PROVISIONING_KEY" ] && /etc/init.d/newt restart
+
+exit 0

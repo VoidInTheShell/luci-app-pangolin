@@ -1,0 +1,44 @@
+--- a/websocket/client.go
++++ b/websocket/client.go
+@@ -433,7 +433,7 @@ func (c *Client) getToken(ctx context.Con
+ 	defer resp.Body.Close()
+ 
+ 	body, _ := io.ReadAll(resp.Body)
+-	logger.Debug("Token response body: %s", string(body))
++	logger.Debug("Token endpoint returned status code: %d", resp.StatusCode)
+ 
+ 	if resp.StatusCode != http.StatusOK {
+ 		logger.Debug("Failed to get token with status code: %d", resp.StatusCode)
+@@ -449,7 +449,7 @@ func (c *Client) getToken(ctx context.Con
+ 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+ 			telemetry.IncReconnect(ctx, c.config.ID, "client", telemetry.ReasonAuthError)
+ 		}
+-		return "", fmt.Errorf("failed to get token with status code: %d, body: %s", resp.StatusCode, string(body))
++		return "", fmt.Errorf("failed to get token with status code: %d", resp.StatusCode)
+ 	}
+ 
+ 	var tokenResp TokenResponse
+@@ -469,7 +469,7 @@ func (c *Client) getToken(ctx context.Con
+ 
+ 	c.serverVersion = tokenResp.Data.ServerVersion
+ 
+-	logger.Debug("Received token: %s", tokenResp.Data.Token)
++	logger.Debug("Received authentication token")
+ 	telemetry.IncConnAttempt(ctx, "auth", "success")
+ 
+ 	return tokenResp.Data.Token, nil
+--- a/websocket/config.go
++++ b/websocket/config.go
+@@ -229,10 +229,10 @@ func (c *Client) provisionIfNeeded() erro
+ 	defer resp.Body.Close()
+ 
+ 	body, _ := io.ReadAll(resp.Body)
+-	logger.Debug("Provisioning response body: %s", string(body))
++	logger.Debug("Provisioning endpoint returned status code: %d", resp.StatusCode)
+ 
+ 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+-		return fmt.Errorf("provisioning endpoint returned status %d: %s", resp.StatusCode, string(body))
++		return fmt.Errorf("provisioning endpoint returned status %d", resp.StatusCode)
+ 	}
+ 
+ 	var provResp ProvisioningResponse

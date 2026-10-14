@@ -1,0 +1,15 @@
+{
+	"luci-app-newt": {
+		"description": "Manage the Pangolin Newt connector",
+		"read": {
+			"ubus": {
+				"luci.newt": [ "get_config", "get_status", "get_logs" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"luci.newt": [ "set_config", "service_action" ]
+			}
+		}
+	}
+}

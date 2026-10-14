@@ -1,0 +1,7 @@
+#!/bin/sh
+
+RUNTIME_DIR=/var/run/newt
+
+umask 077
+date +%s > "$RUNTIME_DIR/started"
+exec /usr/bin/newt --config-file "$RUNTIME_DIR/config.json"

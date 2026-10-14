@@ -1,0 +1,90 @@
+name: Build OpenWrt packages
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-r5c:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.9'
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential ca-certificates curl file gawk gettext \
+            jq libncurses-dev python3 python3-setuptools rsync unzip wget zstd
+
+      - name: Static checks
+        run: ./tests/check.sh
+
+      - name: Restore SDK and download caches
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: openwrt-sdk-25.12.5-rockchip-armv8-v1
+
+      - name: Install stable APK signing key
+        if: ${{ github.event_name != 'pull_request' }}
+        env:
+          OPENWRT_APK_PRIVATE_KEY_B64: ${{ secrets.OPENWRT_APK_PRIVATE_KEY_B64 }}
+        run: |
+          if [ -z "$OPENWRT_APK_PRIVATE_KEY_B64" ]; then
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+              echo 'OPENWRT_APK_PRIVATE_KEY_B64 is required for release tags.' >&2
+              exit 1
+            fi
+            exit 0
+          fi
+          printf '%s' "$OPENWRT_APK_PRIVATE_KEY_B64" | base64 --decode > "$RUNNER_TEMP/openwrt-newt-private-key.pem"
+          chmod 0600 "$RUNNER_TEMP/openwrt-newt-private-key.pem"
+          echo "OPENWRT_APK_PRIVATE_KEY_FILE=$RUNNER_TEMP/openwrt-newt-private-key.pem" >> "$GITHUB_ENV"
+
+      - name: Build APKs and feed index
+        env:
+          NEWT_USE_EXTERNAL_GO: '1'
+        run: ./scripts/build-openwrt.sh
+
+      - name: Verify signed artifacts and ARM64 execution
+        run: ./scripts/verify-artifacts-in-docker.sh
+
+      - name: Build generic NanoPi R5C images
+        run: ./scripts/build-r5c-image.sh
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-newt-25.12.5-aarch64_generic
+          path: dist/openwrt-25.12.5/aarch64_generic/
+          if-no-files-found: error
+
+      - name: Attach release artifacts
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "OpenWrt Newt ${GITHUB_REF_NAME}" \
+              --generate-notes
+          mapfile -t assets < <(find dist/openwrt-25.12.5/aarch64_generic \
+            -type f -not -name '.DS_Store' | sort)
+          gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" --clobber

@@ -53,6 +53,30 @@ See [installation and troubleshooting](docs/INSTALLING.md) for LuCI upload and
 verification. See [Firmware Selector and first boot](docs/IMAGEBUILDER.md) for
 a paste-ready `uci-defaults` script.
 
+### Install the native-main test candidate
+
+The current test release is
+[`v0.18.1-openwrt3-rc1`](https://github.com/alexanderjlynn/openwrt-newt/releases/tag/v0.18.1-openwrt3-rc1).
+It is a GitHub prerelease and does not replace the stable feed above. On a
+router that already has the repository signing key installed, upgrade using
+the two exact candidate packages:
+
+```sh
+cd /tmp
+wget https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/pangolin-cli-0.18.1-r2.apk
+wget https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/luci-app-pangolin-1.0.0-r3.apk
+apk add --upgrade \
+  /tmp/pangolin-cli-0.18.1-r2.apk \
+  /tmp/luci-app-pangolin-1.0.0-r3.apk
+/etc/init.d/rpcd restart
+```
+
+Then select **Services → Pangolin → Network → Main tunnel networking
+→ Native Linux TUN (experimental)**, enable **Register native interface
+with OpenWrt**, and save. See
+[native-main prerelease testing](docs/NATIVE-MAIN-TESTING.md) for validation,
+firewall behavior, and rollback instructions.
+
 ## Build and verify
 
 ```sh

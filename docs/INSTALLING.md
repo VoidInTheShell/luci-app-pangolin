@@ -71,6 +71,44 @@ apk add /tmp/pangolin-cli-0.18.1-r1.apk \
   /tmp/luci-app-pangolin-1.0.0-r2.apk
 ```
 
+## Install the native-main test candidate
+
+The known-good stable release remains `v0.18.1-openwrt2`. Native-main support
+is available separately in the
+[`v0.18.1-openwrt3-rc1` prerelease](https://github.com/alexanderjlynn/openwrt-newt/releases/tag/v0.18.1-openwrt3-rc1),
+so testing it does not change the configured stable package feed.
+
+If the signing key from the stable installation is already present in
+`/etc/apk/keys`, install the candidate over SSH with:
+
+```sh
+cd /tmp
+wget https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/pangolin-cli-0.18.1-r2.apk
+wget https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/luci-app-pangolin-1.0.0-r3.apk
+apk add --upgrade \
+  /tmp/pangolin-cli-0.18.1-r2.apk \
+  /tmp/luci-app-pangolin-1.0.0-r3.apk
+/etc/init.d/rpcd restart
+```
+
+For a LuCI-only package upload, download those same two APKs on a trusted
+computer, open **System → Software → Upload Package**, and install
+`pangolin-cli` first and `luci-app-pangolin` second. The public signing key and
+official OpenWrt repositories must already be configured.
+
+To enable the candidate feature:
+
+1. Open **Services → Pangolin → Network**.
+2. Set **Main tunnel networking** to **Native Linux TUN (experimental)**.
+3. Leave **Native main interface name** as `pangolin`.
+4. Enable **Register native interface with OpenWrt**.
+5. Save and apply, then verify `pangolin` under **Network → Interfaces**.
+
+The interface device appears only after Newt successfully establishes the
+native tunnel. Use `logread -e pangolin` if the registered netifd interface is
+present but its Linux device is not. Complete checks and exact rollback steps
+are in [Native-main prerelease testing](NATIVE-MAIN-TESTING.md).
+
 ## Configure the site
 
 In Pangolin, create or select a site and copy its ID and secret. In

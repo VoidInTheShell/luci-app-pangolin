@@ -145,6 +145,19 @@ sed -i \
 echo '# CONFIG_ALL is not set' >> .config
 echo '# CONFIG_ALL_NONSHARED is not set' >> .config
 echo '# CONFIG_ALL_KMODS is not set' >> .config
+
+# Explicitly select every package owned by this repository. Invoking a
+# package/<name>/compile target does not guarantee that OpenWrt will emit an
+# APK when an SDK cache was created before that package existed. Keeping the
+# selections here makes fresh SDKs and restored CI caches behave identically.
+for package_name in newt luci-app-newt pangolin-cli luci-app-pangolin; do
+	sed -i \
+		-e "/^CONFIG_PACKAGE_${package_name}=/d" \
+		-e "/^# CONFIG_PACKAGE_${package_name} is not set$/d" \
+		.config
+	echo "CONFIG_PACKAGE_${package_name}=m" >> .config
+done
+
 make defconfig
 make package/newt/compile
 make package/luci-app-newt/compile

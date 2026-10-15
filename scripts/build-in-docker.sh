@@ -26,6 +26,6 @@ docker run --rm \
 export PATH=/usr/local/go/bin:$PATH
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends build-essential ca-certificates curl file gawk gettext libncurses-dev python3 rsync unzip wget zstd
+apt-get install -y --no-install-recommends build-essential ca-certificates curl file gawk gettext libncurses-dev python3 python3-distutils rsync unzip wget zstd
 ./scripts/build-openwrt.sh
 chown -R "$HOST_UID:$HOST_GID" /workspace/dist'

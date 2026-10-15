@@ -63,13 +63,30 @@ the two exact candidate packages:
 
 ```sh
 cd /tmp
-wget https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/pangolin-cli-0.18.1-r2.apk
-wget https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/luci-app-pangolin-1.0.0-r3.apk
-apk add --upgrade \
-  /tmp/pangolin-cli-0.18.1-r2.apk \
-  /tmp/luci-app-pangolin-1.0.0-r3.apk
+wget -O pangolin-cli-0.18.1-r2.apk \
+  https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/pangolin-cli-0.18.1-r2.apk
+wget -O luci-app-pangolin-1.0.0-r3.apk \
+  https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/luci-app-pangolin-1.0.0-r3.apk
+ls -lh pangolin-cli-0.18.1-r2.apk luci-app-pangolin-1.0.0-r3.apk
+apk add \
+  ./pangolin-cli-0.18.1-r2.apk \
+  ./luci-app-pangolin-1.0.0-r3.apk
 /etc/init.d/rpcd restart
+/etc/init.d/pangolin restart
 ```
+
+Verify the installed revisions:
+
+```sh
+apk list -I | grep -E '^(pangolin-cli|luci-app-pangolin|newt|luci-app-newt)-'
+```
+
+The candidate lines must be `pangolin-cli-0.18.1-r2` and
+`luci-app-pangolin-1.0.0-r3`. An installed `newt-1.18.1-r3` is the separate
+legacy connector package; Pangolin CLI embeds Newt 1.18.1 and does not use
+that standalone executable. After confirming **Services → Pangolin** connects
+without the legacy service, the unused pair may be removed with
+`apk del luci-app-newt newt`.
 
 Then select **Services → Pangolin → Network → Main tunnel networking
 → Native Linux TUN (experimental)**, enable **Register native interface

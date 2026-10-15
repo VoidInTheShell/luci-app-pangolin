@@ -186,6 +186,32 @@ function serviceInfo() {
 	};
 }
 
+function networkInfo(interfaceName) {
+	const uci = cursor();
+	uci.load('network');
+	let networkRegistered = uci.get('network', 'pangolin') == 'interface' &&
+		uci.get('network', 'pangolin', 'proto') == 'none' &&
+		uci.get('network', 'pangolin', 'device') == interfaceName;
+	uci.unload('network');
+
+	uci.load('firewall');
+	let firewallRegistered = uci.get('firewall', 'pangolin') == 'zone' &&
+		uci.get('firewall', 'pangolin', 'name') == 'pangolin' &&
+		uci.get('firewall', 'pangolin', 'network') == 'pangolin';
+	uci.unload('firewall');
+
+	let sysfs = `/sys/class/net/${interfaceName}`;
+	return {
+		network_registered: networkRegistered,
+		firewall_registered: firewallRegistered,
+		device_present: access(sysfs),
+		operstate: trim(readfile(`${sysfs}/operstate`) ?? ''),
+		device_mtu: trim(readfile(`${sysfs}/mtu`) ?? ''),
+		rx_bytes: trim(readfile(`${sysfs}/statistics/rx_bytes`) ?? '0'),
+		tx_bytes: trim(readfile(`${sysfs}/statistics/tx_bytes`) ?? '0')
+	};
+}
+
 const methods = {
 	get_config: {
 		call: function() {
@@ -258,6 +284,9 @@ const methods = {
 			let cfg = readConfig();
 			let installed = access('/usr/bin/pangolin');
 			let version = installed ? trim(readfile('/usr/share/pangolin/version') ?? '') : '';
+			let newtVersion = installed ? trim(readfile('/usr/share/pangolin/newt-version') ?? '') : '';
+			let interfaceName = cfg.interface_main || 'pangolin';
+			let network = networkInfo(interfaceName);
 			let started = int(readfile(startedFile) ?? 0);
 			let connected = svc.running && access(healthFile);
 			return {
@@ -273,13 +302,19 @@ const methods = {
 				enabled: cfg.enabled == '1',
 				startup_enabled: runService('enabled').code == 0,
 				version: version,
+				newt_version: newtVersion,
 				endpoint: cfg.endpoint,
 				metrics_enabled: cfg.metrics == '1',
 				admin_addr: cfg.admin_addr,
 				native_main: cfg.native_main == '1',
-				interface: cfg.interface_main || 'pangolin',
-				device_present: access(`/sys/class/net/${cfg.interface_main || 'pangolin'}`),
-				operstate: trim(readfile(`/sys/class/net/${cfg.interface_main || 'pangolin'}/operstate`) ?? '')
+				interface: interfaceName,
+				device_present: network.device_present,
+				operstate: network.operstate,
+				device_mtu: network.device_mtu,
+				rx_bytes: network.rx_bytes,
+				tx_bytes: network.tx_bytes,
+				network_registered: network.network_registered,
+				firewall_registered: network.firewall_registered
 			};
 		}
 	},

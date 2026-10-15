@@ -19,8 +19,11 @@ PATH="$repo_root/tests/mocks:$PATH" \
 	"$repo_root/packages/pangolin-cli/files/pangolin-network" sync
 
 grep -q '^network.pangolin=interface$' "$db"
+grep -q '^network.pangolin.proto=none$' "$db"
 grep -q '^network.pangolin.device=pangolin$' "$db"
 grep -q '^firewall.pangolin=zone$' "$db"
+grep -q '^firewall.pangolin.name=pangolin$' "$db"
+grep -q '^firewall.pangolin.network=pangolin$' "$db"
 grep -q '^firewall.pangolin.input=ACCEPT$' "$db"
 grep -q '^firewall.pangolin.output=ACCEPT$' "$db"
 grep -q '^firewall.pangolin.forward=REJECT$' "$db"

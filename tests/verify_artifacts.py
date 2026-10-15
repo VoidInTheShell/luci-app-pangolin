@@ -37,13 +37,13 @@ assert luci_info["arch"] == "noarch"
 assert {"luci-base", "newt", "rpcd-mod-ucode"} <= set(luci_info["depends"])
 
 assert pangolin_info["name"] == "pangolin-cli"
-assert pangolin_info["version"] == "0.18.1-r1"
+assert pangolin_info["version"] == "0.18.1-r2"
 assert pangolin_info["arch"] == "aarch64_generic"
 assert pangolin_info["license"] == "AGPL-3.0-only"
 assert {"ca-bundle", "kmod-tun", "ucode", "ucode-mod-fs", "ucode-mod-uci"} <= set(pangolin_info["depends"])
 
 assert luci_pangolin_info["name"] == "luci-app-pangolin"
-assert luci_pangolin_info["version"] == "1.0.0-r2"
+assert luci_pangolin_info["version"] == "1.0.0-r3"
 assert luci_pangolin_info["arch"] == "noarch"
 assert {"luci-base", "pangolin-cli", "rpcd-mod-ucode"} <= set(luci_pangolin_info["depends"])
 
@@ -52,9 +52,9 @@ assert feed_meta == {
     "architecture": "aarch64_generic",
     "packages": {
         "luci-app-newt": "1.0.0-r4",
-        "luci-app-pangolin": "1.0.0-r2",
+        "luci-app-pangolin": "1.0.0-r3",
         "newt": "1.18.1-r3",
-        "pangolin-cli": "0.18.1-r1",
+        "pangolin-cli": "0.18.1-r2",
     },
 }
 
@@ -76,6 +76,8 @@ assert struct.unpack_from("<H", pangolin_blob, 18)[0] == 183
 assert b"0.18.1" in pangolin_blob
 assert b"1.18.1" in pangolin_blob
 assert b"openwrt" in pangolin_blob
+assert (root / "pangolin-root/usr/share/pangolin/version").read_text().strip() == "0.18.1"
+assert (root / "pangolin-root/usr/share/pangolin/newt-version").read_text().strip() == "1.18.1"
 
 expected_modes = {
     root / "newt-root/etc/config/newt": 0o600,
@@ -97,6 +99,7 @@ expected_modes = {
     root / "pangolin-root/usr/libexec/pangolin-site-run": 0o755,
     root / "pangolin-root/usr/libexec/pangolin-site-sync-credentials": 0o755,
     root / "pangolin-root/usr/share/pangolin/version": 0o644,
+    root / "pangolin-root/usr/share/pangolin/newt-version": 0o644,
     root / "luci-pangolin-root/usr/share/rpcd/ucode/luci.pangolin": 0o755,
     root / "luci-pangolin-root/usr/share/rpcd/acl.d/luci-app-pangolin.json": 0o644,
     root / "luci-pangolin-root/usr/share/luci/menu.d/luci-app-pangolin.json": 0o644,

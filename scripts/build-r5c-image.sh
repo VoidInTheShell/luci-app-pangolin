@@ -90,11 +90,11 @@ manifest="$(find "$imagebuilder_dir/bin/targets/rockchip/armv8" \
 	echo 'ImageBuilder did not produce the NanoPi R5C package manifest.' >&2
 	exit 1
 }
-grep -q '^pangolin-cli - 0\.18\.1-r1$' "$manifest" || {
+grep -q '^pangolin-cli - 0\.18\.1-r2$' "$manifest" || {
 	echo 'The R5C image manifest does not contain the expected Pangolin CLI package.' >&2
 	exit 1
 }
-grep -q '^luci-app-pangolin - 1\.0\.0-r2$' "$manifest" || {
+grep -q '^luci-app-pangolin - 1\.0\.0-r3$' "$manifest" || {
 	echo 'The R5C image manifest does not contain the expected Pangolin LuCI package.' >&2
 	exit 1
 }

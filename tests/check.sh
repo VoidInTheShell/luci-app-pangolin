@@ -41,6 +41,7 @@ required_files=(
 	"packages/luci-app-newt/htdocs/luci-static/resources/view/newt/overview.js"
 	"packages/pangolin-cli/Makefile"
 	"packages/pangolin-cli/files/pangolin.config"
+	"packages/pangolin-cli/files/newt-version"
 	"packages/pangolin-cli/files/pangolin.init"
 	"packages/pangolin-cli/files/configure-pangolin"
 	"packages/pangolin-cli/files/pangolin-network"
@@ -65,6 +66,7 @@ required_files=(
 	"tests/mocks/uci"
 	"docs/IMAGEBUILDER.md"
 	"docs/INSTALLING.md"
+	"docs/NATIVE-MAIN-TESTING.md"
 	"docs/MAINTAINER-HANDOFF.md"
 	"examples/uci-defaults/99-newt-from-feed"
 	"examples/uci-defaults/90-pangolin"
@@ -92,7 +94,8 @@ jq -e . "$repo_root/packages/luci-app-pangolin/root/usr/share/rpcd/acl.d/luci-ap
 grep -q 'PKG_VERSION:=1.18.1' "$repo_root/packages/newt/Makefile"
 grep -q 'PKG_RELEASE:=3' "$repo_root/packages/newt/Makefile"
 grep -q 'PKG_RELEASE:=4' "$repo_root/packages/luci-app-newt/Makefile"
-grep -q 'PKG_RELEASE:=2' "$repo_root/packages/luci-app-pangolin/Makefile"
+grep -q 'PKG_RELEASE:=2' "$repo_root/packages/pangolin-cli/Makefile"
+grep -q 'PKG_RELEASE:=3' "$repo_root/packages/luci-app-pangolin/Makefile"
 grep -q 'PKG_HASH:=e3e66632a3ca2eeb950cb74e087ca837e7eee98a9e0816fcc1e4528a355ccd18' "$repo_root/packages/newt/Makefile"
 grep -q 'PKG_VERSION:=0.18.1' "$repo_root/packages/pangolin-cli/Makefile"
 grep -q 'PKG_HASH:=568fcbf62a1c485d8cec617c635ae5769ff5d6729bcf412a7f0d13efb3d498ad' "$repo_root/packages/pangolin-cli/Makefile"
@@ -103,6 +106,7 @@ grep -q 'NEWT_SYSTEM_SUBSTRATE=CONTAINER' "$repo_root/packages/newt/files/newt.i
 grep -q 'Received authentication token' "$repo_root/packages/newt/patches/010-redact-sensitive-debug-logging.patch"
 grep -q 'os.WriteFile(configPath, data, 0600)' "$repo_root/packages/newt/patches/010-redact-sensitive-debug-logging.patch"
 grep -q 'github.com/fosrl/cli/internal/config.ManagedBy=openwrt' "$repo_root/packages/pangolin-cli/Makefile"
+grep -qx '1\.18\.1' "$repo_root/packages/pangolin-cli/files/newt-version"
 grep -q 'kmod-tun' "$repo_root/packages/pangolin-cli/Makefile"
 grep -q 'uci -q set network.pangolin.device="$interface_name"' "$repo_root/packages/pangolin-cli/files/pangolin-network"
 grep -q 'os.Chmod(socketPath, 0600)' "$repo_root/packages/pangolin-cli/files/dependency-patches/020-restrict-olm-api-socket.patch"
@@ -119,6 +123,7 @@ grep -q 'site-started' "$repo_root/packages/pangolin-cli/files/pangolin-site-run
 grep -q 'mkdir -p "$HOME"' "$repo_root/packages/pangolin-cli/files/pangolin-site-run"
 grep -q 'temporary_signing_key' "$repo_root/scripts/build-openwrt.sh"
 grep -q 'package/pangolin-cli/compile NO_DEPS=1' "$repo_root/scripts/build-openwrt.sh"
+grep -q 'release_args+=(--prerelease)' "$repo_root/.github/workflows/build.yml"
 if grep -Rq 'readCommand(\[' \
 	"$repo_root/packages/luci-app-newt/root/usr/share/rpcd/ucode" \
 	"$repo_root/packages/luci-app-pangolin/root/usr/share/rpcd/ucode"; then

@@ -52,6 +52,15 @@ function formatUptime(seconds) {
 	return days > 0 ? _('%d days, %d hours').format(days, hours % 24) : _('%d hours, %d minutes').format(hours, minutes % 60);
 }
 
+function formatBytes(value) {
+	value = Number(value || 0);
+	if (!Number.isFinite(value) || value < 1)
+		return '0 B';
+	const units = [ 'B', 'KiB', 'MiB', 'GiB', 'TiB' ];
+	const unit = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+	return '%s %s'.format((value / Math.pow(1024, unit)).toFixed(unit ? 1 : 0), units[unit]);
+}
+
 function statusBadge(text, color) {
 	return E('span', {
 		'class': 'label',
@@ -75,14 +84,24 @@ function renderStatus(status) {
 	const rows = [
 		[ _('Service'), serviceState ],
 		[ _('Configuration'), status.configured ? _('Ready') : _('Credentials required') ],
-		[ _('Version'), status.version || _('Unknown') ],
+		[ _('Pangolin CLI'), status.version || _('Unknown') ],
+		[ _('Embedded Newt'), status.newt_version || _('Unknown') ],
 		[ _('PID'), status.pid || '—' ],
 		[ _('Uptime'), status.running ? formatUptime(status.uptime) : '—' ],
 		[ _('Start at boot'), status.startup_enabled ? _('Enabled') : _('Disabled') ],
 		[ _('Pangolin endpoint'), status.endpoint || '—' ],
-		[ _('Native main tunnel'), status.native_main
-			? (status.device_present ? _('%s (%s)').format(status.interface, status.operstate || _('present')) : _('%s not present').format(status.interface))
-			: _('Userspace netstack (default)') ]
+		[ _('Main tunnel networking'), status.native_main
+			? _('Native Linux TUN (experimental)')
+			: _('Userspace netstack (recommended)') ],
+		[ _('Linux device'), status.native_main
+			? (status.device_present ? _('%s (%s, MTU %s)').format(status.interface, status.operstate || _('present'), status.device_mtu || '—') : _('%s not present').format(status.interface))
+			: _('Not applicable in userspace mode') ],
+		[ _('OpenWrt network / firewall'), status.native_main
+			? _('%s / %s').format(status.network_registered ? _('registered') : _('missing'), status.firewall_registered ? _('registered') : _('missing'))
+			: _('Not requested') ],
+		[ _('Tunnel counters'), status.native_main && status.device_present
+			? _('RX %s / TX %s').format(formatBytes(status.rx_bytes), formatBytes(status.tx_bytes))
+			: '—' ]
 	];
 
 	return E('div', { 'class': 'cbi-section' }, [
@@ -272,8 +291,11 @@ function createForm(config) {
 	addFlag(section, 'network', 'no_cloud', _('Disable cloud failover'));
 	addFlag(section, 'network', 'native', _('Native client interfaces'),
 		_('Advanced upstream option for client tunnels served by this site. Most users should leave this disabled.'));
-	addFlag(section, 'network', 'native_main', _('Native main tunnel (experimental)'),
-		_('Creates a Linux TUN instead of the reliable userspace netstack. Upstream currently has an open native-main handshake issue; leave this disabled for normal reverse proxy sites.'));
+	let nativeMain = section.taboption('network', form.ListValue, 'native_main', _('Main tunnel networking'),
+		_('Userspace is the upstream default and safest for reverse proxying. Native mode creates a kernel-visible TUN for OpenWrt firewall, routing, counters, and policy tools, but upstream native-main remains experimental.'));
+	nativeMain.value('0', _('Userspace netstack (recommended; no Linux interface)'));
+	nativeMain.value('1', _('Native Linux TUN (experimental; creates an interface)'));
+	nativeMain.rmempty = false;
 	let interfaceMain = addValue(section, 'network', 'interface_main', _('Native main interface name'), null, 'uciname', 'pangolin');
 	interfaceMain.depends('native_main', '1');
 	let manageNetwork = addFlag(section, 'network', 'manage_network', _('Register native interface with OpenWrt'),

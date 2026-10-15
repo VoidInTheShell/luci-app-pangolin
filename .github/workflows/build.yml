@@ -101,10 +101,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          release_args=(
+            --title "Pangolin for OpenWrt ${GITHUB_REF_NAME}"
+            --generate-notes
+          )
+          if [[ "${GITHUB_REF_NAME}" == *-rc* ]]; then
+            release_args+=(--prerelease)
+          fi
           gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
-            gh release create "${GITHUB_REF_NAME}" \
-              --title "Pangolin for OpenWrt ${GITHUB_REF_NAME}" \
-              --generate-notes
+            gh release create "${GITHUB_REF_NAME}" "${release_args[@]}"
           mapfile -t assets < <(find dist/openwrt-25.12.5/aarch64_generic \
             -type f -not -name '.DS_Store' | sort)
           gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" --clobber

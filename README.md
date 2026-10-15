@@ -17,6 +17,12 @@ remain in the feed only for existing installations.
 | Embedded Newt | 1.18.1 |
 | Package format | OpenWrt APK v3 |
 
+The current known-good stable release is
+[`v0.18.1-openwrt2`](https://github.com/alexanderjlynn/openwrt-newt/releases/tag/v0.18.1-openwrt2).
+Its normal userspace site mode is confirmed working on a NanoPi R5C. Native
+main-interface work is published only as a prerelease until it passes the same
+on-device validation.
+
 ## Install
 
 Add the signed package feed over SSH:
@@ -65,6 +71,7 @@ signatures/metadata/modes, and builds NanoPi R5C sysupgrade images.
 ## Documentation
 
 - [Installation and troubleshooting](docs/INSTALLING.md)
+- [Native-main prerelease testing](docs/NATIVE-MAIN-TESTING.md)
 - [Firmware Selector, first boot, and ImageBuilder](docs/IMAGEBUILDER.md)
 - [Configuration reference](docs/CONFIGURATION.md)
 - [Architecture and security model](docs/ARCHITECTURE.md)

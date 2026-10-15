@@ -15,12 +15,18 @@ or releasing the project. Last reviewed: 2026-10-14.
 | Embedded Newt | 1.18.1, SHA-256 `e3e66632a3ca2eeb950cb74e087ca837e7eee98a9e0816fcc1e4528a355ccd18` |
 | Embedded OLM | 1.10.1, SHA-256 `9de2a1b9daa21ce20b6642c2b948ab9616690800dbc0094835d2f711e3295f1a` |
 | Go | 1.26.9 |
-| Primary packages | `pangolin-cli-0.18.1-r1`, `luci-app-pangolin-1.0.0-r2` |
+| Primary packages | `pangolin-cli-0.18.1-r2`, `luci-app-pangolin-1.0.0-r3` |
 | Compatibility packages | `newt-1.18.1-r3`, `luci-app-newt-1.0.0-r4` |
 
 At review time the official CLI release was 0.18.1. Standalone Newt's latest
 release was 1.18.1 and its README said it was being phased out for the Pangolin
-CLI. Recheck primary release pages before every release.
+CLI. The Pangolin server release was 1.24.0; these projects use independent
+version series. Recheck primary release pages before every release.
+
+`v0.18.1-openwrt2` is the confirmed known-good R5C userspace release. Keep it
+as the stable `/releases/latest` target until a later candidate completes
+on-device reverse-proxy and native-main testing. Candidate tags contain `-rc`
+so the workflow marks them as GitHub prereleases.
 
 ## Product decision
 

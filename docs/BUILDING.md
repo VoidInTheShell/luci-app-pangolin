@@ -65,8 +65,8 @@ expectations, the ImageBuilder pin, and CI cache key.
 The signed feed contains:
 
 ```text
-pangolin-cli-0.18.1-r1.apk
-luci-app-pangolin-1.0.0-r2.apk
+pangolin-cli-0.18.1-r2.apk
+luci-app-pangolin-1.0.0-r3.apk
 newt-1.18.1-r3.apk
 luci-app-newt-1.0.0-r4.apk
 packages.adb
@@ -120,6 +120,10 @@ Release procedure:
 5. Tag `v<pangolin-version>-openwrt<revision>` only after CI is green.
 6. Let the tag workflow publish signed feed and image assets.
 7. Download the public release and independently verify signatures/hashes.
+
+Tags containing `-rc` are published as GitHub prereleases. GitHub excludes
+prereleases from `/releases/latest`, so the signed stable feed remains on the
+known-good release while native-main or other higher-risk changes are tested.
 
 ## Physical R5C acceptance gate
 

@@ -127,6 +127,23 @@ newt_config="$(docker exec "$container_name" ubus call luci.newt get_config '{}'
 jq -e '.has_secret == true and (has("secret") | not)' <<< "$pangolin_config" >/dev/null
 jq -e '.has_secret == true and (has("secret") | not)' <<< "$newt_config" >/dev/null
 
+# Exercise the OpenWrt half of native-main independently from the upstream
+# handshake. netifd/firewall registration must work before the daemon creates
+# its TUN, exactly as it does for other daemon-owned unmanaged interfaces.
+docker exec "$container_name" uci -q set pangolin.main.native_main=1
+docker exec "$container_name" uci -q set pangolin.main.manage_network=1
+docker exec "$container_name" uci -q commit pangolin
+docker exec -e PANGOLIN_NO_RELOAD=1 "$container_name" \
+	/usr/libexec/pangolin-network sync
+[ "$(docker exec "$container_name" uci -q get network.pangolin.proto)" = 'none' ]
+[ "$(docker exec "$container_name" uci -q get network.pangolin.device)" = 'pangolin' ]
+[ "$(docker exec "$container_name" uci -q get firewall.pangolin.network)" = 'pangolin' ]
+native_status="$(docker exec "$container_name" ubus call luci.pangolin get_status '{}')"
+jq -e '.native_main == true and .network_registered == true and .firewall_registered == true' \
+	<<< "$native_status" >/dev/null
+docker exec "$container_name" uci -q set pangolin.main.native_main=0
+docker exec "$container_name" uci -q commit pangolin
+
 invalid_result="$(docker exec "$container_name" ubus call luci.pangolin set_config \
 	'{"config":{"endpoint":"http://insecure.example.com"}}')"
 jq -e '.success == false and (.error | contains("HTTPS"))' <<< "$invalid_result" >/dev/null

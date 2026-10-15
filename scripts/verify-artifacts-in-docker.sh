@@ -17,8 +17,8 @@ fi
 
 newt_apk="${artifacts}/newt-1.18.1-r3.apk"
 luci_apk="${artifacts}/luci-app-newt-1.0.0-r4.apk"
-pangolin_apk="${artifacts}/pangolin-cli-0.18.1-r1.apk"
-luci_pangolin_apk="${artifacts}/luci-app-pangolin-1.0.0-r2.apk"
+pangolin_apk="${artifacts}/pangolin-cli-0.18.1-r2.apk"
+luci_pangolin_apk="${artifacts}/luci-app-pangolin-1.0.0-r3.apk"
 
 for file in "$newt_apk" "$luci_apk" "$pangolin_apk" "$luci_pangolin_apk" \
 	"$artifacts/packages.adb" "$artifacts/index.json"; do
@@ -49,8 +49,8 @@ apk=\"\$sdk/staging_dir/host/bin/apk\"
 \"\$apk\" verify ${verify_args} \\
   /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/newt-1.18.1-r3.apk \\
   /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-newt-1.0.0-r4.apk \\
-  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/pangolin-cli-0.18.1-r1.apk \\
-  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-pangolin-1.0.0-r2.apk \\
+  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/pangolin-cli-0.18.1-r2.apk \\
+  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-pangolin-1.0.0-r3.apk \\
   /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/packages.adb
 \"\$apk\" adbdump --format json \\
   /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/newt-1.18.1-r3.apk \\
@@ -59,10 +59,10 @@ apk=\"\$sdk/staging_dir/host/bin/apk\"
   /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-newt-1.0.0-r4.apk \\
   > /workspace/dist/verify-root/luci.json
 \"\$apk\" adbdump --format json \\
-  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/pangolin-cli-0.18.1-r1.apk \\
+  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/pangolin-cli-0.18.1-r2.apk \\
   > /workspace/dist/verify-root/pangolin.json
 \"\$apk\" adbdump --format json \\
-  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-pangolin-1.0.0-r2.apk \\
+  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-pangolin-1.0.0-r3.apk \\
   > /workspace/dist/verify-root/luci-pangolin.json
 cp /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/index.json \\
   /workspace/dist/verify-root/feed.json
@@ -74,10 +74,10 @@ cp /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/index.json \\
   /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-newt-1.0.0-r4.apk
 \"\$apk\" extract ${verify_args} \\
   --destination /workspace/dist/verify-root/pangolin-root \\
-  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/pangolin-cli-0.18.1-r1.apk
+  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/pangolin-cli-0.18.1-r2.apk
 \"\$apk\" extract ${verify_args} \\
   --destination /workspace/dist/verify-root/luci-pangolin-root \\
-  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-pangolin-1.0.0-r2.apk
+  /workspace/dist/openwrt-${openwrt_version}/aarch64_generic/luci-app-pangolin-1.0.0-r3.apk
 chown -R ${host_uid}:${host_gid} /workspace/dist/verify-root"
 
 python3 "$repo_root/tests/verify_artifacts.py" "$verify_root"

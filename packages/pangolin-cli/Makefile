@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=pangolin-cli
 PKG_VERSION:=0.18.1
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE:=cli-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/fosrl/cli/tar.gz/refs/tags/$(PKG_VERSION)?
@@ -86,6 +86,7 @@ define Package/pangolin-cli/install
 	$(INSTALL_DIR) $(1)/usr/bin $(1)/usr/libexec $(1)/usr/share/pangolin $(1)/etc/init.d $(1)/etc/config
 	$(INSTALL_BIN) $(GO_PKG_BUILD_BIN_DIR)/cli $(1)/usr/bin/pangolin
 	$(INSTALL_DATA) ./files/version $(1)/usr/share/pangolin/version
+	$(INSTALL_DATA) ./files/newt-version $(1)/usr/share/pangolin/newt-version
 	$(INSTALL_BIN) ./files/pangolin.init $(1)/etc/init.d/pangolin
 	$(INSTALL_BIN) ./files/pangolin-site-run $(1)/usr/libexec/pangolin-site-run
 	$(INSTALL_BIN) ./files/pangolin-service-action $(1)/usr/libexec/pangolin-service-action

@@ -32,7 +32,7 @@ assert newt_info["license"] == "AGPL-3.0-only"
 assert {"ca-bundle", "ucode", "ucode-mod-fs", "ucode-mod-uci"} <= set(newt_info["depends"])
 
 assert luci_info["name"] == "luci-app-newt"
-assert luci_info["version"] == "1.0.0-r3"
+assert luci_info["version"] == "1.0.0-r4"
 assert luci_info["arch"] == "noarch"
 assert {"luci-base", "newt", "rpcd-mod-ucode"} <= set(luci_info["depends"])
 
@@ -43,7 +43,7 @@ assert pangolin_info["license"] == "AGPL-3.0-only"
 assert {"ca-bundle", "kmod-tun", "ucode", "ucode-mod-fs", "ucode-mod-uci"} <= set(pangolin_info["depends"])
 
 assert luci_pangolin_info["name"] == "luci-app-pangolin"
-assert luci_pangolin_info["version"] == "1.0.0-r1"
+assert luci_pangolin_info["version"] == "1.0.0-r2"
 assert luci_pangolin_info["arch"] == "noarch"
 assert {"luci-base", "pangolin-cli", "rpcd-mod-ucode"} <= set(luci_pangolin_info["depends"])
 
@@ -51,8 +51,8 @@ assert feed_meta == {
     "version": 2,
     "architecture": "aarch64_generic",
     "packages": {
-        "luci-app-newt": "1.0.0-r3",
-        "luci-app-pangolin": "1.0.0-r1",
+        "luci-app-newt": "1.0.0-r4",
+        "luci-app-pangolin": "1.0.0-r2",
         "newt": "1.18.1-r3",
         "pangolin-cli": "0.18.1-r1",
     },

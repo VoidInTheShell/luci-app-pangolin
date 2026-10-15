@@ -44,6 +44,9 @@ jobs:
           path: .cache
           key: openwrt-sdk-25.12.5-rockchip-armv8-v1
 
+      - name: Test RPC backends in stock OpenWrt
+        run: ./tests/test_rpc_backends_openwrt.sh
+
       - name: Install stable APK signing key
         if: ${{ github.event_name != 'pull_request' }}
         env:

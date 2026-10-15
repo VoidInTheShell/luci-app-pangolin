@@ -19,6 +19,7 @@ sh -n "$repo_root/examples/uci-defaults/90-newt"
 sh -n "$repo_root/examples/uci-defaults/99-newt-from-feed"
 sh -n "$repo_root/examples/uci-defaults/90-pangolin"
 sh -n "$repo_root/examples/uci-defaults/99-pangolin-from-feed"
+bash -n "$repo_root/tests/test_rpc_backends_openwrt.sh"
 node --check "$repo_root/packages/luci-app-newt/htdocs/luci-static/resources/view/newt/overview.js"
 node --check "$repo_root/packages/luci-app-pangolin/htdocs/luci-static/resources/view/pangolin/overview.js"
 python3 -c 'import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text())' \
@@ -60,6 +61,7 @@ required_files=(
 	"scripts/verify-artifacts-in-docker.sh"
 	"tests/verify_artifacts.py"
 	"tests/test_pangolin_network.sh"
+	"tests/test_rpc_backends_openwrt.sh"
 	"tests/mocks/uci"
 	"docs/IMAGEBUILDER.md"
 	"docs/INSTALLING.md"
@@ -80,6 +82,7 @@ done
 
 [ -x "$repo_root/packages/luci-app-newt/root/usr/share/rpcd/ucode/luci.newt" ]
 [ -x "$repo_root/packages/luci-app-pangolin/root/usr/share/rpcd/ucode/luci.pangolin" ]
+[ -x "$repo_root/tests/test_rpc_backends_openwrt.sh" ]
 
 jq -e . "$repo_root/packages/luci-app-newt/root/usr/share/luci/menu.d/luci-app-newt.json" >/dev/null
 jq -e . "$repo_root/packages/luci-app-newt/root/usr/share/rpcd/acl.d/luci-app-newt.json" >/dev/null
@@ -88,7 +91,8 @@ jq -e . "$repo_root/packages/luci-app-pangolin/root/usr/share/rpcd/acl.d/luci-ap
 
 grep -q 'PKG_VERSION:=1.18.1' "$repo_root/packages/newt/Makefile"
 grep -q 'PKG_RELEASE:=3' "$repo_root/packages/newt/Makefile"
-grep -q 'PKG_RELEASE:=3' "$repo_root/packages/luci-app-newt/Makefile"
+grep -q 'PKG_RELEASE:=4' "$repo_root/packages/luci-app-newt/Makefile"
+grep -q 'PKG_RELEASE:=2' "$repo_root/packages/luci-app-pangolin/Makefile"
 grep -q 'PKG_HASH:=e3e66632a3ca2eeb950cb74e087ca837e7eee98a9e0816fcc1e4528a355ccd18' "$repo_root/packages/newt/Makefile"
 grep -q 'PKG_VERSION:=0.18.1' "$repo_root/packages/pangolin-cli/Makefile"
 grep -q 'PKG_HASH:=568fcbf62a1c485d8cec617c635ae5769ff5d6729bcf412a7f0d13efb3d498ad' "$repo_root/packages/pangolin-cli/Makefile"
@@ -104,6 +108,12 @@ grep -q 'uci -q set network.pangolin.device="$interface_name"' "$repo_root/packa
 grep -q 'os.Chmod(socketPath, 0600)' "$repo_root/packages/pangolin-cli/files/dependency-patches/020-restrict-olm-api-socket.patch"
 grep -q 'procd_open_instance site' "$repo_root/packages/pangolin-cli/files/pangolin.init"
 grep -q 'instances?.site' "$repo_root/packages/luci-app-pangolin/root/usr/share/rpcd/ucode/luci.pangolin"
+if grep -Rq '\\x00]' \
+	"$repo_root/packages/luci-app-newt/root/usr/share/rpcd/ucode" \
+	"$repo_root/packages/luci-app-pangolin/root/usr/share/rpcd/ucode"; then
+	echo 'ucode regex character classes must not use the unsupported \\x00 escape.' >&2
+	exit 1
+fi
 grep -q 'site-started' "$repo_root/packages/pangolin-cli/files/pangolin.init"
 grep -q 'site-started' "$repo_root/packages/pangolin-cli/files/pangolin-site-run"
 grep -q 'mkdir -p "$HOME"' "$repo_root/packages/pangolin-cli/files/pangolin-site-run"
@@ -140,7 +150,8 @@ if command -v shellcheck >/dev/null 2>&1; then
 		"$repo_root/examples/uci-defaults/90-newt" \
 		"$repo_root/examples/uci-defaults/99-newt-from-feed" \
 		"$repo_root/examples/uci-defaults/90-pangolin" \
-		"$repo_root/examples/uci-defaults/99-pangolin-from-feed"
+		"$repo_root/examples/uci-defaults/99-pangolin-from-feed" \
+		"$repo_root/tests/test_rpc_backends_openwrt.sh"
 fi
 
 test_dir="$(mktemp -d)"

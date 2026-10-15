@@ -43,7 +43,11 @@ function boolString(value) {
 }
 
 function boundedString(value, max) {
-	return type(value) == 'string' && length(value) <= max && !match(value, /[\r\n\x00]/);
+	// ucode's regexp engine does not support a \x00 escape in a character
+	// class. Keep the NUL check separate so validation is executable on the
+	// same ucode runtime rpcd uses, rather than merely bytecode-compilable.
+	return type(value) == 'string' && length(value) <= max &&
+		!match(value, /[\r\n]/) && index(value, "\x00") < 0;
 }
 
 function validPath(value) {
@@ -209,8 +213,15 @@ const methods = {
 				if (config[key] != null)
 					uci.set(service, section, key, boolString(config[key]));
 			for (let key in listFields)
-				if (config[key] != null)
-					uci.set(service, section, key, config[key]);
+				if (config[key] != null) {
+					// ucode-mod-uci deliberately rejects an empty array. Treat it
+					// as removal of the UCI list, which is also how readConfig()
+					// represents an absent list option.
+					if (length(config[key]) > 0)
+						uci.set(service, section, key, config[key]);
+					else if (uci.get(service, section, key) != null)
+						uci.delete(service, section, key);
+				}
 
 			for (let key in secretFields) {
 				if (isBool(config['clear_' + key]) && boolString(config['clear_' + key]) == '1')

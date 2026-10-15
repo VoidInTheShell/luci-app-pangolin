@@ -15,8 +15,8 @@ or releasing the project. Last reviewed: 2026-10-14.
 | Embedded Newt | 1.18.1, SHA-256 `e3e66632a3ca2eeb950cb74e087ca837e7eee98a9e0816fcc1e4528a355ccd18` |
 | Embedded OLM | 1.10.1, SHA-256 `9de2a1b9daa21ce20b6642c2b948ab9616690800dbc0094835d2f711e3295f1a` |
 | Go | 1.26.9 |
-| Primary packages | `pangolin-cli-0.18.1-r1`, `luci-app-pangolin-1.0.0-r1` |
-| Compatibility packages | `newt-1.18.1-r3`, `luci-app-newt-1.0.0-r3` |
+| Primary packages | `pangolin-cli-0.18.1-r1`, `luci-app-pangolin-1.0.0-r2` |
+| Compatibility packages | `newt-1.18.1-r3`, `luci-app-newt-1.0.0-r4` |
 
 At review time the official CLI release was 0.18.1. Standalone Newt's latest
 release was 1.18.1 and its README said it was being phased out for the Pangolin
@@ -49,13 +49,14 @@ supported until upstream resolves it.
   and headless configuration helper.
 - `packages/luci-app-pangolin/`: LuCI form/status/log view, rpcd ucode API, ACL,
   and menu entry.
-- `packages/newt/`, `packages/luci-app-newt/`: compatibility packages. Revision
-  r3 adds actionable RPC/service errors and credential-file hardening.
+- `packages/newt/`, `packages/luci-app-newt/`: compatibility packages. Newt
+  r3 adds credential-file hardening; LuCI r4 includes the RPC runtime fix.
 - `examples/uci-defaults/90-pangolin`: setup when APKs are in the image.
 - `examples/uci-defaults/99-pangolin-from-feed`: Firmware Selector late-network
   signed-feed bootstrap.
 - `scripts/`: pinned SDK/ImageBuilder, signing, Docker, and artifact checks.
-- `tests/`: static, network policy, APK/feed/ELF, target-ucode verification.
+- `tests/`: static, network policy, APK/feed/ELF, target-ucode verification,
+  and real rpcd/ubus execution in stock OpenWrt 25.12.5.
 - `keys/openwrt-newt-public-key.pem`: stable public feed key.
 - `private-key.pem`: ignored signing secret; never display or commit it.
 
@@ -82,18 +83,25 @@ administrator's zone policy. No forwarding or masquerading is created.
 
 ## RPC and the original “Operation failed” report
 
-The old LuCI app showed only **Operation failed** and no logs. There was no
-device-side ubus status to prove a single root cause. The code hardens every
+`luci-app-pangolin-1.0.0-r1` reliably failed `set_config` with ubus code 9.
+The `boundedString()` validator used `\x00` inside a regular-expression
+character class. OpenWrt ucode accepted bytecode compilation but raised
+`Syntax error: Missing ']'` only when that function executed. Revision r2
+checks CR/LF with a supported regex and NUL separately; legacy
+`luci-app-newt` carries the same fix in r4. The code also hardens every
 observed boundary:
 
 - RPC declarations use `reject: true` and render transport exceptions.
 - ucode `fs.popen()` receives command strings, not argv arrays (the latter can
   compile but fail at runtime on OpenWrt ucode).
+- Empty JSON arrays remove absent UCI list options because ucode-mod-uci
+  rejects an empty array as a value.
 - Service actions use fixed allowlisted helpers and return captured output.
 - Init validation writes the same actionable message to stderr and logd.
 - The procd status lookup uses the actual `site` instance name.
 
-Do not regress these behaviors or claim an unverified historic root cause.
+Do not rely on `ucode -c` alone: it did not catch the lazy regex failure. Keep
+the stock-OpenWrt RPC execution test in CI.
 
 ## Security boundaries
 
@@ -119,12 +127,15 @@ unique, short-lived provisioning key or post-deploy mode-0600 helper file.
 
 ```sh
 ./tests/check.sh
+./tests/test_rpc_backends_openwrt.sh
 ./scripts/build-in-docker.sh
 ./scripts/verify-artifacts-in-docker.sh
 ./scripts/build-r5c-image-in-docker.sh
 ```
 
-The artifact verifier must continue checking all four APKs, signed feed,
+The RPC test downloads a checksum-pinned official 25.12.5 x86-64 rootfs and
+executes both backends through real `rpcd`, `ubusd`, and ucode. The artifact
+verifier must continue checking all four APKs, signed feed,
 AArch64 ELF execution, exact dependency metadata and modes, embedded versions,
 and both target-compiled ucode backends. The R5C image manifest must contain
 `pangolin-cli` and `luci-app-pangolin`.

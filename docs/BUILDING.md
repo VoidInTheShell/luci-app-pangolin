@@ -66,9 +66,9 @@ The signed feed contains:
 
 ```text
 pangolin-cli-0.18.1-r1.apk
-luci-app-pangolin-1.0.0-r1.apk
+luci-app-pangolin-1.0.0-r2.apk
 newt-1.18.1-r3.apk
-luci-app-newt-1.0.0-r3.apk
+luci-app-newt-1.0.0-r4.apk
 packages.adb
 index.json
 packages-sha256sums
@@ -83,6 +83,12 @@ The Newt pair is compatibility-only. New images install
 `tests/check.sh` validates shell/JavaScript/Python syntax, JSON descriptors,
 source pins, required files, security-patch markers, the `site` procd/RPC
 instance contract, network/firewall invariants, and negative bootstrap inputs.
+
+`tests/test_rpc_backends_openwrt.sh` checksum-verifies an official OpenWrt
+25.12.5 rootfs and exercises configuration saves, service transitions,
+validation, secret omission, status, and logs through real `rpcd`/`ubus`.
+This is intentionally separate from bytecode compilation because ucode can
+defer some regular-expression failures until the affected function executes.
 
 `verify-artifacts-in-docker.sh` additionally:
 

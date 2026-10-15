@@ -51,15 +51,16 @@ a paste-ready `uci-defaults` script.
 
 ```sh
 ./tests/check.sh
+./tests/test_rpc_backends_openwrt.sh
 ./scripts/build-in-docker.sh
 ./scripts/verify-artifacts-in-docker.sh
 ./scripts/build-r5c-image-in-docker.sh
 ```
 
 The pipeline uses checksum-pinned source archives and the OpenWrt 25.12.5 SDK,
-cross-compiles AArch64 APKs, target-compiles both rpcd ucode backends, executes
-the ARM64 binaries under QEMU, verifies package signatures/metadata/modes, and
-builds NanoPi R5C sysupgrade images.
+cross-compiles AArch64 APKs, executes both RPC backends inside stock OpenWrt
+25.12.5 `rpcd`/`ubus`, runs the ARM64 binaries under QEMU, verifies package
+signatures/metadata/modes, and builds NanoPi R5C sysupgrade images.
 
 ## Documentation
 

@@ -53,7 +53,7 @@ use `--allow-untrusted` with this signed feed.
 Download these release assets on a trusted computer:
 
 - `pangolin-cli-0.18.1-r1.apk`
-- `luci-app-pangolin-1.0.0-r1.apk`
+- `luci-app-pangolin-1.0.0-r2.apk`
 - `packages-sha256sums`
 - `openwrt-newt-public-key.pem`
 
@@ -68,7 +68,7 @@ If the UI cannot solve the two local files as one transaction, copy them to
 
 ```sh
 apk add /tmp/pangolin-cli-0.18.1-r1.apk \
-  /tmp/luci-app-pangolin-1.0.0-r1.apk
+  /tmp/luci-app-pangolin-1.0.0-r2.apk
 ```
 
 ## Configure the site
@@ -146,10 +146,20 @@ logread -e pangolin
 ubus -v list luci.pangolin
 ```
 
+`luci-app-pangolin-1.0.0-r1` had a ucode validation bug that made every save
+fail with `luci.pangolin/set_config` ubus code 9. Upgrade to `1.0.0-r2` or
+newer, restart rpcd, and reload LuCI. The matching `pangolin-cli` remains
+`0.18.1-r1`; it was not the source of this save failure. Confirm the installed
+revision with:
+
+```sh
+apk list -I luci-app-pangolin pangolin-cli
+```
+
 Common causes are an endpoint without `https://`, a missing half of the
 ID/secret pair, an invalid path or interface name, or enabling native-main
 without `/dev/net/tun`. For the legacy app, install `newt-1.18.1-r3` and
-`luci-app-newt-1.0.0-r3` together; those revisions include the same actionable
+`luci-app-newt-1.0.0-r4` together; those revisions include the same actionable
 RPC error handling.
 
 ## Migrate from the legacy Newt app
@@ -171,6 +181,7 @@ the OpenWrt base system:
 ```sh
 apk update
 apk add --upgrade pangolin-cli luci-app-pangolin
+/etc/init.d/rpcd restart
 ```
 
 Before removal, save the root-only UCI file if needed:

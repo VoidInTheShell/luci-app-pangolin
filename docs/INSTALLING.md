@@ -78,18 +78,39 @@ is available separately in the
 [`v0.18.1-openwrt3-rc1` prerelease](https://github.com/alexanderjlynn/openwrt-newt/releases/tag/v0.18.1-openwrt3-rc1),
 so testing it does not change the configured stable package feed.
 
-If the signing key from the stable installation is already present in
-`/etc/apk/keys`, install the candidate over SSH with:
+Use the candidate as a temporary signed repository over SSH:
 
 ```sh
-cd /tmp
-wget https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/pangolin-cli-0.18.1-r2.apk
-wget https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/luci-app-pangolin-1.0.0-r3.apk
-apk add --upgrade \
-  /tmp/pangolin-cli-0.18.1-r2.apk \
-  /tmp/luci-app-pangolin-1.0.0-r3.apk
+test -s /etc/apk/keys/openwrt-newt-public-key.pem || {
+  echo "OpenWrt Newt signing key is missing"
+  exit 1
+}
+
+echo 'https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/packages.adb' \
+  > /etc/apk/repositories.d/openwrt-newt-rc.list
+
+apk update
+apk add --upgrade pangolin-cli luci-app-pangolin
+
 /etc/init.d/rpcd restart
+/etc/init.d/pangolin restart
 ```
+
+Verify:
+
+```sh
+apk list -I | grep -E '^(pangolin-cli|luci-app-pangolin)-'
+```
+
+Expected:
+
+```text
+pangolin-cli-0.18.1-r2
+luci-app-pangolin-1.0.0-r3
+```
+
+Keep `openwrt-newt-rc.list` while testing the candidate. Remove it and run
+`apk update` when returning exclusively to the stable feed.
 
 For a LuCI-only package upload, download those same two APKs on a trusted
 computer, open **System → Software → Upload Package**, and install

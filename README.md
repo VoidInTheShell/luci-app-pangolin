@@ -58,19 +58,21 @@ a paste-ready `uci-defaults` script.
 The current test release is
 [`v0.18.1-openwrt3-rc1`](https://github.com/alexanderjlynn/openwrt-newt/releases/tag/v0.18.1-openwrt3-rc1).
 It is a GitHub prerelease and does not replace the stable feed above. On a
-router that already has the repository signing key installed, upgrade using
-the two exact candidate packages:
+router that already has the repository signing key installed, use the
+candidate as a temporary signed repository:
 
 ```sh
-cd /tmp
-wget -O pangolin-cli-0.18.1-r2.apk \
-  https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/pangolin-cli-0.18.1-r2.apk
-wget -O luci-app-pangolin-1.0.0-r3.apk \
-  https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/luci-app-pangolin-1.0.0-r3.apk
-ls -lh pangolin-cli-0.18.1-r2.apk luci-app-pangolin-1.0.0-r3.apk
-apk add \
-  ./pangolin-cli-0.18.1-r2.apk \
-  ./luci-app-pangolin-1.0.0-r3.apk
+test -s /etc/apk/keys/openwrt-newt-public-key.pem || {
+  echo "OpenWrt Newt signing key is missing"
+  exit 1
+}
+
+echo 'https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/packages.adb' \
+  > /etc/apk/repositories.d/openwrt-newt-rc.list
+
+apk update
+apk add --upgrade pangolin-cli luci-app-pangolin
+
 /etc/init.d/rpcd restart
 /etc/init.d/pangolin restart
 ```
@@ -78,15 +80,24 @@ apk add \
 Verify the installed revisions:
 
 ```sh
-apk list -I | grep -E '^(pangolin-cli|luci-app-pangolin|newt|luci-app-newt)-'
+apk list -I | grep -E '^(pangolin-cli|luci-app-pangolin)-'
 ```
 
-The candidate lines must be `pangolin-cli-0.18.1-r2` and
-`luci-app-pangolin-1.0.0-r3`. An installed `newt-1.18.1-r3` is the separate
+Expected:
+
+```text
+pangolin-cli-0.18.1-r2
+luci-app-pangolin-1.0.0-r3
+```
+
+An installed `newt-1.18.1-r3` is the separate
 legacy connector package; Pangolin CLI embeds Newt 1.18.1 and does not use
 that standalone executable. After confirming **Services → Pangolin** connects
 without the legacy service, the unused pair may be removed with
 `apk del luci-app-newt newt`.
+
+Keep `openwrt-newt-rc.list` while testing the candidate. Remove that file and
+run `apk update` when returning exclusively to the stable feed.
 
 Then select **Services → Pangolin → Network → Main tunnel networking
 → Native Linux TUN (experimental)**, enable **Register native interface

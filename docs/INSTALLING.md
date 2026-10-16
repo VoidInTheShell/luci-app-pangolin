@@ -52,8 +52,8 @@ use `--allow-untrusted` with this signed feed.
 
 Download these release assets on a trusted computer:
 
-- `pangolin-cli-0.18.1-r1.apk`
-- `luci-app-pangolin-1.0.0-r2.apk`
+- `pangolin-cli-0.18.1-r2.apk`
+- `luci-app-pangolin-1.0.0-r3.apk`
 - `packages-sha256sums`
 - `openwrt-newt-public-key.pem`
 
@@ -67,18 +67,18 @@ If the UI cannot solve the two local files as one transaction, copy them to
 `/tmp` and run:
 
 ```sh
-apk add /tmp/pangolin-cli-0.18.1-r1.apk \
-  /tmp/luci-app-pangolin-1.0.0-r2.apk
+apk add /tmp/pangolin-cli-0.18.1-r2.apk \
+  /tmp/luci-app-pangolin-1.0.0-r3.apk
 ```
 
-## Install the native-main test candidate
+## Install the promoted native-main release
 
-The known-good stable release remains `v0.18.1-openwrt2`. Native-main support
-is available separately in the
-[`v0.18.1-openwrt3-rc1` prerelease](https://github.com/alexanderjlynn/openwrt-newt/releases/tag/v0.18.1-openwrt3-rc1),
-so testing it does not change the configured stable package feed.
+The tested `v0.18.1-openwrt3-rc1` build has been promoted to stable/latest.
+Its original tag is retained to preserve download links. The standard stable
+feed now installs these same packages. Existing users can run `apk update`
+and `apk add --upgrade pangolin-cli luci-app-pangolin`.
 
-Use the candidate as a temporary signed repository over SSH:
+The original pinned repository also remains available over SSH:
 
 ```sh
 test -s /etc/apk/keys/openwrt-newt-public-key.pem || {
@@ -109,15 +109,16 @@ pangolin-cli-0.18.1-r2
 luci-app-pangolin-1.0.0-r3
 ```
 
-Keep `openwrt-newt-rc.list` while testing the candidate. Remove it and run
-`apk update` when returning exclusively to the stable feed.
+When the stable feed is configured, remove the temporary
+`/etc/apk/repositories.d/openwrt-newt-rc.list` and run `apk update`.
+This does not downgrade installed packages.
 
 For a LuCI-only package upload, download those same two APKs on a trusted
 computer, open **System → Software → Upload Package**, and install
 `pangolin-cli` first and `luci-app-pangolin` second. The public signing key and
 official OpenWrt repositories must already be configured.
 
-To enable the candidate feature:
+To enable the native-TUN feature:
 
 1. Open **Services → Pangolin → Network**.
 2. Set **Main tunnel networking** to **Native Linux TUN (experimental)**.
@@ -180,6 +181,11 @@ the package creates:
 Input is initially accepted because the site proxy listeners bind to the
 tunnel address. Review that policy for the router services in scope. Existing
 administrator changes to the named zone are preserved on later syncs.
+
+**Unmanaged** is the correct LuCI protocol: `proto=none` lets Pangolin manage
+the TUN and its addresses. No MAC address is expected because a TUN transports
+IP packets rather than Ethernet frames. Do not change it to DHCP/static or
+assign a MAC simply to change those displays.
 
 This is not the default because upstream issue #403 reports a `native-main`
 handshake failure. Treat it as experimental until upstream closes that gap.

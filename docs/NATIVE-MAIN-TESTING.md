@@ -1,4 +1,8 @@
-# Native-main prerelease testing
+# Native-main setup and validation
+
+The tested `v0.18.1-openwrt3-rc1` release was promoted in place to stable/latest
+after the user confirmed operation on a NanoPi R5C. The original tag is retained
+to preserve existing asset URLs. Native-main remains an opt-in upstream feature.
 
 ## Scope and expected benefit
 
@@ -25,9 +29,8 @@ the target workload rather than assuming a gain.
 Upstream Newt issue
 [#403](https://github.com/fosrl/newt/issues/403) still reports a native-main
 handshake failure. The upstream maintainer describes native modes as
-experimental. This candidate therefore remains opt-in and must not replace the
-known-good stable release until it works on the R5C with the intended Pangolin
-deployment.
+experimental. Native-main therefore remains opt-in even though this package
+release has been promoted after on-device confirmation.
 
 ## Versions
 
@@ -42,10 +45,19 @@ time:
 Pangolin server, CLI, and Newt version numbers do not move in lockstep. The
 LuCI status panel reports the CLI and embedded Newt versions separately.
 
-## Install the prerelease
+## Install the promoted release
 
-The prerelease is intentionally excluded from the stable `latest` feed.
-Download its two exact packages over SSH:
+The stable `latest` feed now provides this build. With the signing key and
+stable feed configured as described in [Installation](INSTALLING.md), run:
+
+```sh
+apk update
+apk add --upgrade pangolin-cli luci-app-pangolin
+/etc/init.d/rpcd restart
+/etc/init.d/pangolin restart
+```
+
+Alternatively, download its two exact packages over SSH:
 
 ```sh
 cd /tmp
@@ -72,6 +84,11 @@ The package creates `network.pangolin` with protocol `none` and binds it to the
 daemon-owned `pangolin` device. It also creates a `pangolin` firewall zone with
 initial input/output `ACCEPT` and forwarding `REJECT`. No forwarding to LAN or
 WAN and no masquerading are added automatically.
+
+LuCI's **Unmanaged** protocol and absent MAC address are expected: netifd uses
+`proto=none` because Pangolin owns the device configuration, and this Layer 3
+TUN has no Ethernet header or MAC address. Do not add DHCP/static configuration
+or an artificial MAC to change the display.
 
 The status panel should show all of the following:
 
@@ -120,5 +137,5 @@ apk add \
 Passing the exact local APK paths constrains the transaction to those stable
 revisions; APK v3 has no `--allow-downgrade` option.
 
-The stable feed and `releases/latest` continue to point to
-`v0.18.1-openwrt2` throughout this test.
+The stable feed and `releases/latest` now point to the promoted
+`v0.18.1-openwrt3-rc1`. The earlier `v0.18.1-openwrt2` remains available for rollback.

@@ -23,10 +23,13 @@ release was 1.18.1 and its README said it was being phased out for the Pangolin
 CLI. The Pangolin server release was 1.24.0; these projects use independent
 version series. Recheck primary release pages before every release.
 
-`v0.18.1-openwrt2` is the confirmed known-good R5C userspace release. Keep it
-as the stable `/releases/latest` target until a later candidate completes
-on-device reverse-proxy and native-main testing. Candidate tags contain `-rc`
-so the workflow marks them as GitHub prereleases.
+`v0.18.1-openwrt3-rc1` was promoted in place to stable/latest after the user
+confirmed the build works on the R5C. Its tag and existing signed assets are
+retained. `v0.18.1-openwrt2` remains the earlier userspace rollback baseline.
+Native-main remains opt-in because it is experimental upstream. LuCI's
+Unmanaged protocol and absent MAC are correct for this daemon-owned L3 TUN.
+Future candidate tags contain `-rc` so CI initially publishes prereleases;
+promotion requires explicitly clearing the prerelease flag and setting latest.
 
 ## Product decision
 

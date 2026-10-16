@@ -124,6 +124,10 @@ Release procedure:
 Tags containing `-rc` are published as GitHub prereleases. GitHub excludes
 prereleases from `/releases/latest`, so the signed stable feed remains on the
 known-good release while native-main or other higher-risk changes are tested.
+After user acceptance, an existing candidate can be promoted in place with
+`gh release edit <tag> --prerelease=false --latest`. Retain its tag and signed
+assets so existing links keep working. This was used for
+`v0.18.1-openwrt3-rc1`; its `-rc1` tag now identifies the promoted stable build.
 
 ## Physical R5C acceptance gate
 

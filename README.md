@@ -18,10 +18,10 @@ remain in the feed only for existing installations.
 | Package format | OpenWrt APK v3 |
 
 The current known-good stable release is
-[`v0.18.1-openwrt2`](https://github.com/alexanderjlynn/openwrt-newt/releases/tag/v0.18.1-openwrt2).
-Its normal userspace site mode is confirmed working on a NanoPi R5C. Native
-main-interface work is published only as a prerelease until it passes the same
-on-device validation.
+[`v0.18.1-openwrt3-rc1`](https://github.com/alexanderjlynn/openwrt-newt/releases/tag/v0.18.1-openwrt3-rc1).
+This tested candidate was promoted to stable after the user confirmed operation
+on a NanoPi R5C. The original tag is retained to preserve download links.
+The default feed below now includes its native-TUN integration.
 
 ## Install
 
@@ -53,13 +53,14 @@ See [installation and troubleshooting](docs/INSTALLING.md) for LuCI upload and
 verification. See [Firmware Selector and first boot](docs/IMAGEBUILDER.md) for
 a paste-ready `uci-defaults` script.
 
-### Install the native-main test candidate
+### Upgrade to the promoted native-main release
 
-The current test release is
+The promoted stable release is
 [`v0.18.1-openwrt3-rc1`](https://github.com/alexanderjlynn/openwrt-newt/releases/tag/v0.18.1-openwrt3-rc1).
-It is a GitHub prerelease and does not replace the stable feed above. On a
-router that already has the repository signing key installed, use the
-candidate as a temporary signed repository:
+It is available from the stable feed above. Existing stable-feed users can
+run `apk update` followed by `apk add --upgrade pangolin-cli luci-app-pangolin`.
+For an explicitly pinned installation, the original candidate repository URL
+also remains available:
 
 ```sh
 test -s /etc/apk/keys/openwrt-newt-public-key.pem || {
@@ -96,14 +97,20 @@ that standalone executable. After confirming **Services → Pangolin** connects
 without the legacy service, the unused pair may be removed with
 `apk del luci-app-newt newt`.
 
-Keep `openwrt-newt-rc.list` while testing the candidate. Remove that file and
-run `apk update` when returning exclusively to the stable feed.
+If the stable feed is configured, the temporary `openwrt-newt-rc.list` is no
+longer needed; remove it and run `apk update`. Removing a feed does not
+downgrade installed packages.
 
 Then select **Services → Pangolin → Network → Main tunnel networking
 → Native Linux TUN (experimental)**, enable **Register native interface
 with OpenWrt**, and save. See
 [native-main prerelease testing](docs/NATIVE-MAIN-TESTING.md) for validation,
 firewall behavior, and rollback instructions.
+
+LuCI displays the native interface protocol as **Unmanaged** because Pangolin
+owns the TUN and its addresses. A TUN carries IP packets without Ethernet
+headers, so no MAC address is expected. Keep protocol `none`; do not configure
+DHCP, a static address, or an artificial MAC to change those displays.
 
 ## Build and verify
 

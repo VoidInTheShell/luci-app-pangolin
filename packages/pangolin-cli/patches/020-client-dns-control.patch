@@ -1,0 +1,87 @@
+--- a/cmd/up/client/client.go
++++ b/cmd/up/client/client.go
+@@ -50,6 +50,8 @@
+ 	TlsClientCert           string
+ 	Attached                bool
+ 	Silent                  bool
++	DisableDNS              bool
++	DNSListenAddr           string
+ 	OverrideDNS             bool
+ 	TunnelDNS               bool
+ 	UpstreamDNS             []string
+@@ -165,6 +167,19 @@
+ 				}
+ 			}
+ 
++			if opts.DisableDNS {
++				opts.OverrideDNS = false
++				opts.TunnelDNS = false
++				opts.DNSListenAddr = ""
++			} else if opts.DNSListenAddr != "" {
++				host, port, err := net.SplitHostPort(opts.DNSListenAddr)
++				n, portErr := strconv.Atoi(port)
++				if err != nil || !net.ParseIP(host).IsLoopback() || portErr != nil || n < 1 || n > 65535 {
++					return errors.New("--dns-listen requires a loopback IP and a port between 1 and 65535")
++				}
++				// OpenWrt dnsmasq manages takeover when a host port is selected.
++				opts.OverrideDNS = false
++			}
+ 			return nil
+ 		},
+ 		Run: func(cmd *cobra.Command, args []string) {
+@@ -190,6 +205,8 @@
+ 	cmd.Flags().DurationVar(&opts.PingTimeout, "ping-timeout", 5*time.Second, "Ping `timeout`")
+ 	cmd.Flags().BoolVar(&opts.Holepunch, "holepunch", true, "Enable holepunching")
+ 	cmd.Flags().StringVar(&opts.TlsClientCert, "tls-client-cert", "", "TLS client certificate `path`")
++	cmd.Flags().BoolVar(&opts.DisableDNS, "disable-dns", false, "Completely disable the Pangolin DNS proxy and DNS override")
++	cmd.Flags().StringVar(&opts.DNSListenAddr, "dns-listen", "", "Optional loopback UDP/TCP DNS listen address (for example 127.0.0.1:953)")
+ 	cmd.Flags().BoolVar(&opts.OverrideDNS, "override-dns", true, "When enabled, the client uses custom DNS servers to resolve internal resources and aliases. This overrides your system's default DNS settings. Queries that cannot be resolved as a Pangolin resource will be forwarded to your configured Upstream DNS Server.")
+ 	cmd.Flags().BoolVar(&opts.TunnelDNS, "tunnel-dns", false, "When enabled, DNS queries are routed through the tunnel for remote resolution. To ensure queries are tunneled correctly, you must define the DNS server as a Pangolin resource and enter its address as an Upstream DNS Server.")
+ 	cmd.Flags().StringSliceVar(&opts.UpstreamDNS, "upstream-dns", []string{}, "List of DNS servers to use for external DNS resolution if overriding system DNS")
+@@ -228,6 +245,8 @@
+ 	{"HTTP_ADDR", "http-addr"},
+ 	{"PING_INTERVAL", "ping-interval"},
+ 	{"PING_TIMEOUT", "ping-timeout"},
++	{"DISABLE_DNS", "disable-dns"},
++	{"DNS_LISTEN", "dns-listen"},
+ 	{"OVERRIDE_DNS", "override-dns"},
+ 	{"TUNNEL_DNS", "tunnel-dns"},
+ 	{"DISABLE_RELAY", "disable-relay"},
+@@ -532,6 +551,12 @@
+ 		}
+ 		if cmd.Flags().Changed("tls-client-cert") {
+ 			cmdArgs = append(cmdArgs, "--tls-client-cert", opts.TlsClientCert)
++		}
++		if opts.DisableDNS {
++			cmdArgs = append(cmdArgs, "--disable-dns")
++		}
++		if opts.DNSListenAddr != "" {
++			cmdArgs = append(cmdArgs, "--dns-listen", opts.DNSListenAddr)
+ 		}
+ 		if cmd.Flags().Changed("override-dns") {
+ 			if opts.OverrideDNS {
+@@ -820,6 +845,8 @@
+ 		TlsClientCert:                     opts.TlsClientCert,
+ 		PingIntervalDuration:              opts.PingInterval,
+ 		PingTimeoutDuration:               opts.PingTimeout,
++		DisableDNS:                        opts.DisableDNS,
++		DNSListenAddr:                     opts.DNSListenAddr,
+ 		OverrideDNS:                       opts.OverrideDNS,
+ 		TunnelDNS:                         opts.TunnelDNS,
+ 		UpstreamDNS:                       upstreamDNS,
+--- a/internal/config/config.go
++++ b/internal/config/config.go
+@@ -411,6 +411,13 @@
+ 
+ // GetPangolinConfigDir returns the path to the .pangolin directory and ensures it exists
+ func GetPangolinConfigDir() (string, error) {
++	// procd keeps transient CLI state off flash without changing root's HOME.
++	if dir := os.Getenv("PANGOLIN_CLI_CONFIG_DIR"); dir != "" {
++		if !filepath.IsAbs(dir) {
++			return "", fmt.Errorf("PANGOLIN_CLI_CONFIG_DIR must be an absolute path")
++		}
++		return filepath.Clean(dir), nil
++	}
+ 	homeDir, err := userHomeDir()
+ 	if err != nil {
+ 		return "", fmt.Errorf("failed to get home directory: %w", err)

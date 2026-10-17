@@ -1,0 +1,24 @@
+#!/bin/sh
+# Only install DNS takeover after the actual client API reports registration.
+set -eu
+umask 077
+mkdir -p /var/run/pangolin
+cleanup() { /usr/libexec/pangolin-dns restore; }
+trap 'cleanup; exit 0' INT TERM
+while :; do
+	/usr/libexec/pangolin-client-integration sync || logger -t pangolin 'Could not apply client firewall / Nikki integration'
+	connected=0
+	if curl -fsS --max-time 2 --unix-socket /var/run/olm.sock http://localhost/status > /var/run/pangolin/client-status.tmp 2>/dev/null; then
+		mv /var/run/pangolin/client-status.tmp /var/run/pangolin/client-status.json
+		date +%s > /var/run/pangolin/client-status-updated
+		connected="$(jsonfilter -i /var/run/pangolin/client-status.json -e '@.registered')"
+	else
+		rm -f /var/run/pangolin/client-status.json /var/run/pangolin/client-status.tmp /var/run/pangolin/client-status-updated
+	fi
+	if [ "$connected" = true ]; then
+		/usr/libexec/pangolin-dns apply || logger -t pangolin 'Could not apply DNS integration'
+	else
+		/usr/libexec/pangolin-dns restore || true
+	fi
+	sleep 5 & wait $!
+done

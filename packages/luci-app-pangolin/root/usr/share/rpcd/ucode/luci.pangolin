@@ -15,7 +15,7 @@ const startedFile = '/var/run/pangolin/site-started';
 const ubus = connect();
 
 const stringFields = [
-	'endpoint', 'auth_mode', 'id', 'name', 'log_level', 'dns', 'mtu', 'port',
+	'role', 'client_auth', 'lan_zone', 'org', 'dns_port', 'endpoint', 'auth_mode', 'id', 'name', 'log_level', 'dns', 'mtu', 'port',
 	'interface', 'interface_main', 'prefer_endpoint', 'ping_interval',
 	'ping_timeout', 'udp_proxy_idle_timeout', 'updown_script', 'blueprint_file',
 	'provisioning_blueprint_file', 'docker_socket', 'tls_client_cert',
@@ -25,13 +25,13 @@ const stringFields = [
 ];
 
 const boolFields = [
-	'enabled', 'native', 'native_main', 'no_cloud', 'disable_clients',
+	'nikki_bypass', 'client_firewall', 'dns_enabled', 'dns_takeover', 'subnet_router', 'prefer_local_routes', 'enabled', 'native', 'native_main', 'no_cloud', 'disable_clients',
 	'disable_ssh', 'enforce_hc_cert', 'docker_enforce_network_validation',
 	'auth_daemon_generate_random_password', 'metrics', 'otlp',
 	'metrics_async_bytes', 'pprof', 'manage_network', 'stdout', 'stderr'
 ];
 
-const listFields = [ 'local_endpoint_interfaces', 'tls_client_ca' ];
+const listFields = [ 'dns_upstream', 'local_endpoint_interfaces', 'tls_client_ca' ];
 const secretFields = [ 'secret', 'provisioning_key', 'auth_daemon_key' ];
 
 function isBool(value) {
@@ -56,69 +56,80 @@ function validPath(value) {
 
 function validate(config) {
 	if (type(config) != 'object')
-		return 'Configuration must be an object.';
+		return '配置必须为对象。';
 
 	for (let key in config) {
 		if (index(stringFields, key) >= 0 || index(secretFields, key) >= 0) {
 			if (!boundedString(config[key], key == 'secret' || key == 'provisioning_key' || key == 'auth_daemon_key' ? 4096 : 1024))
-				return `Invalid value for ${key}.`;
+				return `${key} 的值无效。`;
 		} else if (index(boolFields, key) >= 0 || match(key, /^clear_(secret|provisioning_key|auth_daemon_key)$/)) {
 			if (!isBool(config[key]))
-				return `Invalid boolean value for ${key}.`;
+				return `${key} 必须为启用或关闭。`;
 		} else if (index(listFields, key) >= 0) {
 			if (type(config[key]) != 'array' || length(config[key]) > 32)
-				return `Invalid list value for ${key}.`;
+				return `${key} 的列表格式无效。`;
 			for (let value in config[key])
 				if (!boundedString(value, 1024))
-					return `Invalid list entry for ${key}.`;
+					return `${key} 包含无效的列表项。`;
 		} else {
-			return `Unknown configuration field: ${key}.`;
+			return `未知配置字段：${key}。`;
 		}
 	}
 
 	for (let key in [ 'interface', 'interface_main' ])
 		if (config[key] != null && !match(config[key], /^[A-Za-z0-9_.:-]{1,15}$/))
-			return `${key} must be a valid Linux interface name of at most 15 characters.`;
+			return `${key} 必须为有效的 Linux 接口名称，长度不超过 15 个字符。`;
 
 	if (config.local_endpoint_interfaces != null)
 		for (let value in config.local_endpoint_interfaces)
 			if (!match(value, /^[A-Za-z0-9_.:-]+$/))
-				return 'Local endpoint interfaces may contain only letters, numbers, dot, underscore, colon, and hyphen.';
+				return '本地端点接口名称只能包含字母、数字、点、下划线、冒号和连字符。';
 
 	if (config.tls_client_ca != null)
 		for (let value in config.tls_client_ca)
 			if (!validPath(value))
-				return "CA certificate paths must be absolute and may not contain '..' components.";
+				return "CA 证书必须使用绝对路径，且不能包含 '..' 路径段。";
 
-	if (config.endpoint != null && !match(config.endpoint, /^https:\/\/[^\s]+$/))
-		return 'Pangolin endpoint must be an HTTPS URL.';
+	// ucode uses POSIX regular expressions: \s matches the letter s, not whitespace.
+	if (config.endpoint != null && (!match(config.endpoint, /^https:\/\/[^\/?#@[:space:]]+([\/?#][^[:space:]]*)?$/)))
+		return 'Pangolin 服务器地址必须使用 HTTPS。';
 
 	if (config.auth_mode != null && config.auth_mode != 'credentials' && config.auth_mode != 'provisioning')
-		return 'Authentication mode must be credentials or provisioning.';
+		return '站点配置方式必须为已有凭据或一次性配置密钥。';
+	if (config.client_auth != null && index([ 'web', 'machine' ], config.client_auth) < 0)
+		return '客户端认证方式无效。';
+	if (config.lan_zone != null && !match(config.lan_zone, /^[A-Za-z0-9_]{1,32}$/))
+		return '局域网防火墙区域名称无效。';
+	if (config.role != null && index([ 'client', 'site' ], config.role) < 0)
+		return '服务角色无效。';
+	if (config.dns_port != null && (!match(config.dns_port, /^[0-9]+$/) || int(config.dns_port) < 1 || int(config.dns_port) > 65535 || int(config.dns_port) == 53))
+		return 'DNS 监听端口必须为 1 至 65535；53 端口保留给 dnsmasq。';
+	if (config.dns_enabled != null && boolString(config.dns_enabled) == '0' && config.dns_takeover != null && boolString(config.dns_takeover) == '1')
+		return '请先启用 Pangolin DNS，再开启自动接管。';
 
 	if (config.log_level != null && index([ 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL' ], config.log_level) < 0)
-		return 'Invalid log level.';
+		return '日志级别无效。';
 
 	for (let key in [ 'updown_script', 'blueprint_file', 'provisioning_blueprint_file',
 	                  'docker_socket', 'tls_client_cert', 'tls_client_key',
 	                  'tls_private_key', 'auth_daemon_principals_file',
 	                  'auth_daemon_ca_cert_path' ])
 		if (config[key] != null && !validPath(config[key]) && key != 'docker_socket')
-			return `${key} must be an absolute path without '..' components.`;
+			return `${key} 必须为绝对路径，且不能包含 '..' 路径段。`;
 
 	for (let key in [ 'ping_interval', 'ping_timeout', 'udp_proxy_idle_timeout' ])
 		if (config[key] != null && !match(config[key], /^[1-9][0-9]*(ms|s|m|h)$/))
-			return `${key} must be a positive duration such as 500ms, 15s, or 2m.`;
+			return `${key} 必须为正时长，例如 500ms、15s 或 2m。`;
 
 	if (config.mtu != null && (int(config.mtu) < 576 || int(config.mtu) > 9000))
-		return 'MTU must be between 576 and 9000.';
+		return 'MTU 必须为 576 至 9000。';
 
 	if (config.port != null && config.port != '' && (int(config.port) < 1 || int(config.port) > 65535))
-		return 'Port must be between 1 and 65535.';
+		return '端口必须为 1 至 65535。';
 
 	for (let key in [ 'respawn_threshold', 'respawn_timeout', 'respawn_retry' ])
 		if (config[key] != null && !match(config[key], /^[0-9]+$/))
-			return `${key} must be a non-negative integer.`;
+			return `${key} 必须为非负整数。`;
 
 	return null;
 }
@@ -131,19 +142,71 @@ function readConfig() {
 	for (let key in stringFields)
 		result[key] = uci.get(service, section, key) ?? '';
 	for (let key in boolFields)
-		result[key] = uci.get(service, section, key) ?? '0';
+		result[key] = uci.get(service, section, key) ?? (index([ 'client_firewall', 'stdout', 'stderr', 'manage_network' ], key) >= 0 ? '1' : '0');
 	for (let key in listFields) {
 		let value = uci.get(service, section, key) ?? [];
 		result[key] = type(value) == 'array' ? value : (value == '' ? [] : [ value ]);
 	}
 	for (let key in secretFields)
 		result['has_' + key] = length(uci.get(service, section, key) ?? '') > 0;
+	result.role ||= 'client';
+	result.client_auth ||= 'web';
+	result.lan_zone ||= 'lan';
+	result.dns_port ||= '953';
+	result.endpoint ||= 'https://app.pangolin.net';
+	result.log_level ||= 'INFO';
+	result.mtu ||= '1280';
+	result.interface ||= 'pangolin';
+	result.auth_mode ||= 'credentials';
 
 	uci.unload(service);
 	return result;
 }
 
+function privateAccount() {
+	try {
+		let store = json(readfile('/etc/pangolin/client/accounts.json') ?? '{}');
+		let raw = store?.accounts?.[store.activeUserId ?? store.activeuserid] ?? {};
+		return {
+			host: raw.host,
+			sessionToken: raw.sessionToken ?? raw.sessiontoken,
+			olmCredentials: raw.olmCredentials ?? raw.olmcredentials,
+			orgId: raw.orgId ?? raw.orgid
+		};
+	} catch (e) { return {}; }
+}
+
+function authInfo() {
+	let cfg = readConfig();
+	let account = privateAccount();
+	let loggedIn = !!account.sessionToken && account.host == replace(cfg.endpoint, /\/+$/, '');
+	let authenticated = loggedIn && !!account.olmCredentials?.secret;
+	let raw = {};
+	try { raw = json(readfile('/var/run/pangolin-auth/status.json') ?? '{}'); } catch (e) {}
+	let state = raw.State ?? 'idle';
+	if (state == 'starting' || state == 'pending') {
+		let info = ubus.call('service', 'list', { name: 'pangolin-auth' });
+		if (info?.['pangolin-auth']?.instances?.login?.running !== true)
+			state = 'error';
+	}
+	if (state == 'pending' && int(raw.ExpiresAt) <= time()) state = 'expired';
+	let url = raw.URL ?? '';
+	if (index(url, replace(cfg.endpoint, /\/+$/, '') + '/auth/login/device?code=') != 0) url = '';
+	return {
+		authenticated: authenticated, logged_in: loggedIn, state: state,
+		code: state == 'pending' ? raw.Code ?? '' : '',
+		url: state == 'pending' ? url : '',
+		expires_at: state == 'pending' ? raw.ExpiresAt : 0,
+		error: raw.Error ? '认证未完成，请重试。' : '',
+		organizations: raw.Organizations ?? [],
+		selected_org: account.orgId ?? ''
+	};
+}
+
 function redact(text) {
+	let account = privateAccount();
+	for (let value in [ account.sessionToken, account.olmCredentials?.secret ])
+		if (value && length(value) >= 4) text = replace(text, value, '[redacted]');
 	const uci = cursor();
 	uci.load(service);
 	for (let key in secretFields) {
@@ -166,12 +229,20 @@ function readCommand(command) {
 }
 
 function runService(action) {
-	let result = readCommand(`/usr/libexec/pangolin-service-action ${action}`);
+	let result = readCommand(`/usr/libexec/pangolin-service-action ${action} 2>&1`);
 	result.output = redact(result.output);
 	return result;
 }
 
+function runPackageAction(action) {
+	if (index([ 'install', 'uninstall' ], action) < 0)
+		return { code: 2, output: '不支持此软件包操作。' };
+	let result = readCommand(`/usr/libexec/pangolin-package-action ${action}`);
+	return result;
+}
+
 function syncNetwork() {
+	if (readConfig().role != 'site') return { code: 0, output: '' };
 	let result = readCommand('/usr/libexec/pangolin-network sync');
 	result.output = redact(result.output);
 	return result;
@@ -179,25 +250,28 @@ function syncNetwork() {
 
 function serviceInfo() {
 	let info = ubus.call('service', 'list', { name: service }) ?? {};
-	let instance = info?.[service]?.instances?.site ?? {};
+	let role = readConfig().role || 'client';
+	let instance = info?.[service]?.instances?.[role] ?? {};
 	return {
 		running: instance.running === true,
 		pid: instance.pid ?? null
 	};
 }
 
-function networkInfo(interfaceName) {
+function networkInfo(interfaceName, client) {
 	const uci = cursor();
+	const name = client ? 'pangolin_client' : 'pangolin';
 	uci.load('network');
-	let networkRegistered = uci.get('network', 'pangolin') == 'interface' &&
-		uci.get('network', 'pangolin', 'proto') == 'none' &&
-		uci.get('network', 'pangolin', 'device') == interfaceName;
+	let networkRegistered = uci.get('network', name) == 'interface' &&
+		uci.get('network', name, 'proto') == 'none' &&
+		uci.get('network', name, 'device') == interfaceName;
 	uci.unload('network');
 
 	uci.load('firewall');
-	let firewallRegistered = uci.get('firewall', 'pangolin') == 'zone' &&
-		uci.get('firewall', 'pangolin', 'name') == 'pangolin' &&
-		uci.get('firewall', 'pangolin', 'network') == 'pangolin';
+	let networks = uci.get('firewall', name, 'network');
+	let firewallRegistered = uci.get('firewall', name) == 'zone' &&
+		uci.get('firewall', name, 'name') == (client ? 'pg_client' : 'pangolin') &&
+		(type(networks) == 'array' ? index(networks, name) >= 0 : networks == name);
 	uci.unload('firewall');
 
 	let sysfs = `/sys/class/net/${interfaceName}`;
@@ -220,9 +294,11 @@ const methods = {
 	},
 
 	set_config: {
-		args: { config: {} },
+		args: { config: {}, apply: false },
 		call: function(request) {
 			let config = request.args?.config;
+			if (type(config) == 'object' && type(config.endpoint) == 'string')
+				config.endpoint = replace(trim(config.endpoint), /\/+$/, '');
 			let error = validate(config);
 			if (error)
 				return { success: false, error: error };
@@ -260,10 +336,12 @@ const methods = {
 			uci.commit(service);
 			uci.unload(service);
 			chmod('/etc/config/pangolin', 0600);
+			if (request.args?.apply !== true)
+				return { success: true, applied: false };
 
 			let network = syncNetwork();
 			if (network.code != 0)
-				return { success: false, error: `Configuration saved, but OpenWrt network integration failed${network.output ? ': ' + network.output : '.'}` };
+				return { success: false, error: `配置已保存，但 OpenWrt 网络集成失败${network.output ? ': ' + network.output : '.'}` };
 
 			let action = (config.enabled == null ? readConfig().enabled == '1' : boolString(config.enabled) == '1')
 				? 'restart'
@@ -273,7 +351,7 @@ const methods = {
 				? { success: true }
 				: {
 					success: false,
-					error: `Configuration saved, but the service ${action} failed${result.output ? ': ' + result.output : '.'}`
+					error: `配置已保存，但服务操作 ${action} 失败${result.output ? ': ' + result.output : '.'}`
 				};
 		}
 	},
@@ -283,20 +361,30 @@ const methods = {
 			let svc = serviceInfo();
 			let cfg = readConfig();
 			let installed = access('/usr/bin/pangolin');
+			let architecture = trim(readCommand('uname -m').output);
 			let version = installed ? trim(readfile('/usr/share/pangolin/version') ?? '') : '';
 			let newtVersion = installed ? trim(readfile('/usr/share/pangolin/newt-version') ?? '') : '';
-			let interfaceName = cfg.interface_main || 'pangolin';
-			let network = networkInfo(interfaceName);
-			let started = int(readfile(startedFile) ?? 0);
-			let connected = svc.running && access(healthFile);
+			let interfaceName = cfg.role != 'site' ? (cfg.interface || 'pangolin') : (cfg.interface_main || 'pangolin');
+			let network = networkInfo(interfaceName, cfg.role != 'site');
+			let client = cfg.role != 'site';
+				let authentication = client && cfg.client_auth == 'web' ? authInfo() : null;
+			let started = int(readfile(client ? '/var/run/pangolin/client-started' : startedFile) ?? 0);
+			let actual = {};
+			try { actual = json(readfile('/var/run/pangolin/client-status.json') ?? '{}'); } catch (e) {}
+			if (time() - int(readfile('/var/run/pangolin/client-status-updated') ?? 0) > 15)
+				actual = {};
+			let connected = svc.running && (client ? actual.registered === true : access(healthFile));
 			return {
 				installed: installed,
+				supported_architecture: index([ 'x86_64', 'aarch64', 'arm64' ], architecture) >= 0,
+				architecture: architecture,
 				running: svc.running,
 				connected: connected,
 				pid: svc.pid,
 				started: started || null,
 				uptime: started > 0 && time() > started ? time() - started : 0,
-				configured: cfg.auth_mode == 'provisioning'
+					authentication: authentication,
+					configured: authentication ? authentication.authenticated : !client && cfg.auth_mode == 'provisioning'
 					? cfg.has_provisioning_key && length(cfg.name) > 0
 					: cfg.has_secret && length(cfg.id) > 0,
 				enabled: cfg.enabled == '1',
@@ -304,9 +392,19 @@ const methods = {
 				version: version,
 				newt_version: newtVersion,
 				endpoint: cfg.endpoint,
+				role: client ? 'client' : 'site',
+				subnet_router: cfg.subnet_router == '1',
+				dns_enabled: cfg.dns_enabled == '1',
+				dns_takeover: cfg.dns_takeover == '1',
+				dns_configured_listener: cfg.dns_enabled == '1' ? `127.0.0.1:${cfg.dns_port || '953'}` : '',
+				dns_listener: connected && cfg.dns_enabled == '1' ? actual.dnsListener ?? '' : '',
+				dns_takeover_active: access('/etc/pangolin/dns-backup.json'),
 				metrics_enabled: cfg.metrics == '1',
 				admin_addr: cfg.admin_addr,
-				native_main: cfg.native_main == '1',
+				nikki_detected: access('/etc/config/nikki'),
+				nikki_bypass: cfg.nikki_bypass == '1',
+				integration_active: access('/etc/pangolin/integration-backup.json'),
+				native_main: client || cfg.native_main == '1',
 				interface: interfaceName,
 				device_present: network.device_present,
 				operstate: network.operstate,
@@ -334,7 +432,7 @@ const methods = {
 			let result = syncNetwork();
 			return result.code == 0
 				? { success: true }
-				: { success: false, error: `Network synchronization failed${result.output ? ': ' + result.output : '.'}` };
+				: { success: false, error: `网络同步失败${result.output ? ': ' + result.output : '.'}` };
 		}
 	},
 
@@ -343,13 +441,44 @@ const methods = {
 		call: function(request) {
 			let action = request.args?.action;
 			if (index([ 'start', 'stop', 'restart', 'enable', 'disable' ], action) < 0)
-				return { success: false, error: 'Unsupported service action.' };
+				return { success: false, error: '不支持此服务操作。' };
 			if ((action == 'start' || action == 'restart') && readConfig().enabled != '1')
-				return { success: false, error: 'Enable the Pangolin site in the configuration and save before starting it.' };
+				return { success: false, error: '请先在基本设置中启用 Pangolin 服务并保存，再启动服务。' };
 			let result = runService(action);
 			return result.code == 0
 				? { success: true }
-				: { success: false, error: `Service action '${action}' failed${result.output ? ': ' + result.output : '.'}` };
+				: { success: false, error: `服务操作 ${action} 失败${result.output ? ': ' + result.output : '.'}` };
+		}
+	},
+
+	get_auth_status: {
+		call: function() { return authInfo(); }
+	},
+
+	auth_action: {
+		args: { action: 'start' },
+		call: function(request) {
+			let action = request.args?.action;
+			if (index([ 'start', 'cancel', 'logout' ], action) < 0)
+				return { success: false, error: '不支持此认证操作。' };
+			let result = readCommand('/usr/libexec/pangolin-auth-action ' + action);
+			return result.code == 0 ? { success: true }
+				: { success: false, error: '认证操作失败：' + redact(result.output) };
+		}
+	},
+
+	package_action: {
+		args: { action: 'install' },
+		call: function(request) {
+			let action = request.args?.action;
+			if (index([ 'install', 'uninstall' ], action) < 0)
+				return { success: false, error: '不支持此软件包操作。' };
+			if (action == 'uninstall')
+				runService('stop');
+			let result = runPackageAction(action);
+			return result.code == 0
+				? { success: true, output: redact(result.output) }
+				: { success: false, error: `软件包操作 ${action} 失败${result.output ? ': ' + redact(result.output) : '.'}` };
 		}
 	}
 };

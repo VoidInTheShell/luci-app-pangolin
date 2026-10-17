@@ -1,0 +1,258 @@
+--- a/cmd/auth/login/login.go
++++ b/cmd/auth/login/login.go
+@@ -6,6 +6,7 @@
+ 	"fmt"
+ 	"net/url"
+ 	"os"
++	"path/filepath"
+ 	"strings"
+ 	"time"
+ 
+@@ -68,7 +69,7 @@
+ 	return hostname
+ }
+ 
+-func loginWithWeb(hostname string, sessionCookieName string, knownEmail string) (string, error) {
++func loginWithWeb(hostname string, sessionCookieName string, knownEmail string, statePath string) (string, error) {
+ 	// Build base URL for login (use hostname as-is, StartDeviceWebAuth will add /api/v1)
+ 	baseURL := hostname
+ 
+@@ -111,6 +112,14 @@
+ 	loginURL := fmt.Sprintf("%s?code=%s", baseLoginURL, code)
+ 	if knownEmail != "" {
+ 		loginURL = fmt.Sprintf("%s&user=%s", loginURL, url.QueryEscape(knownEmail))
++	}
++
++	if statePath != "" {
++		if err := writeWebState(statePath, webState{
++			State: "pending", Code: code, URL: loginURL, ExpiresAt: expiresAt.Unix(),
++		}); err != nil {
++			return "", err
++		}
+ 	}
+ 
+ 	// Display code and instructions (similar to GH CLI format)
+@@ -156,7 +165,7 @@
+ 		// Poll for verification status
+ 		pollResp, message, err := api.PollDeviceWebAuth(loginClient, code)
+ 		// print debug info
+-		logger.Debug("Polling response: %+v, message: %s, err: %v", pollResp, message, err)
++		logger.Debug("Device verification poll completed")
+ 		if err != nil {
+ 			logger.Error("Error polling device web auth: %v", err)
+ 			return "", fmt.Errorf("failed to poll device web auth: %w", err)
+@@ -185,6 +194,8 @@
+ 
+ type LoginCmdOpts struct {
+ 	Hostname string
++	WebState string
++	Org      string
+ }
+ 
+ func LoginCmd() *cobra.Command {
+@@ -207,11 +218,16 @@
+ 		},
+ 		Run: func(cmd *cobra.Command, args []string) {
+ 			if err := loginMain(cmd, &opts); err != nil {
++				if opts.WebState != "" {
++					_ = writeWebState(opts.WebState, webState{State: "error", Error: "Authentication did not complete. Try again."})
++				}
+ 				os.Exit(1)
+ 			}
+ 		},
+ 	}
+ 
++	cmd.Flags().StringVar(&opts.WebState, "web-state", "", "Write token-free device pairing state to an absolute JSON path")
++	cmd.Flags().StringVar(&opts.Org, "org", "", "Select this organization without a terminal prompt")
+ 	return cmd
+ }
+ 
+@@ -225,6 +241,9 @@
+ 	accountStore := config.AccountStoreFromContext(cmd.Context())
+ 	cfg := config.ConfigFromContext(cmd.Context())
+ 
++	if opts.WebState != "" && (opts.Hostname == "" || !filepath.IsAbs(opts.WebState)) {
++		return errors.New("--web-state requires an absolute path and an explicit HTTPS hostname")
++	}
+ 	hostname := opts.Hostname
+ 	knownEmail := ""
+ 
+@@ -298,7 +317,7 @@
+ 	}
+ 
+ 	// Perform web login
+-	sessionToken, err := loginWithWeb(hostname, cfg.SessionCookieName, knownEmail)
++	sessionToken, err := loginWithWeb(hostname, cfg.SessionCookieName, knownEmail, opts.WebState)
+ 	if err != nil {
+ 		logger.Error("%v", err)
+ 		return err
+@@ -350,8 +369,23 @@
+ 		newAccount.Name = user.Name
+ 	}
+ 
+-	// Ensure new user has an organization selected
+-	if newAccount.OrgID == "" {
++	var webOrgs []webOrg
++	if opts.WebState != "" {
++		orgs, err := apiClient.ListUserOrgs(userID)
++		if err != nil {
++			return err
++		}
++		for _, org := range orgs.Orgs {
++			webOrgs = append(webOrgs, webOrg{ID: org.OrgID, Name: org.Name})
++		}
++		newAccount.OrgID, err = selectWebOrg(webOrgs, opts.Org, newAccount.OrgID)
++		if err != nil {
++			return err
++		}
++	}
++
++	// Web mode lets LuCI select an organization after authorization.
++	if newAccount.OrgID == "" && opts.WebState == "" {
+ 		orgID, err := utils.SelectOrgForm(apiClient, userID)
+ 		if err != nil {
+ 			logger.Error("Failed to select organization: %v", err)
+@@ -418,5 +452,10 @@
+ 		}
+ 	}
+ 
++	if opts.WebState != "" {
++		return writeWebState(opts.WebState, webState{
++			State: "authenticated", Organizations: webOrgs, SelectedOrg: newAccount.OrgID,
++		})
++	}
+ 	return nil
+ }
+--- /dev/null
++++ b/cmd/auth/login/web_state.go
+@@ -0,0 +1,71 @@
++package login
++
++import (
++	"encoding/json"
++	"errors"
++	"os"
++	"path/filepath"
++)
++
++type webOrg struct {
++	ID   string
++	Name string
++}
++
++type webState struct {
++	State         string
++	Code          string
++	URL           string
++	ExpiresAt     int64
++	Error         string
++	Organizations []webOrg
++	SelectedOrg   string
++}
++
++// State is deliberately separate from accounts.json: it never contains a token
++// or OLM secret and is the only file exposed through the LuCI authentication RPC.
++func writeWebState(path string, state webState) error {
++	if !filepath.IsAbs(path) {
++		return errors.New("web state path must be absolute")
++	}
++	data, err := json.Marshal(state)
++	if err != nil {
++		return err
++	}
++	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
++		return err
++	}
++	tmp, err := os.CreateTemp(filepath.Dir(path), ".pairing-*")
++	if err != nil {
++		return err
++	}
++	defer os.Remove(tmp.Name())
++	if _, err := tmp.Write(data); err != nil {
++		tmp.Close()
++		return err
++	}
++	if err := tmp.Close(); err != nil {
++		return err
++	}
++	return os.Rename(tmp.Name(), path)
++}
++
++func selectWebOrg(orgs []webOrg, requested, previous string) (string, error) {
++	for _, org := range orgs {
++		if requested != "" && org.ID == requested {
++			return requested, nil
++		}
++	}
++	if requested != "" {
++		return "", errors.New("requested organization is not available to this account")
++	}
++	for _, org := range orgs {
++		if previous != "" && org.ID == previous {
++			return previous, nil
++		}
++	}
++	if len(orgs) == 1 {
++		return orgs[0].ID, nil
++	}
++	return "", nil
++}
+--- /dev/null
++++ b/cmd/auth/login/web_state_test.go
+@@ -0,0 +1,56 @@
++package login
++
++import (
++	"encoding/json"
++	"os"
++	"path/filepath"
++	"testing"
++)
++
++func TestWebStateIsPrivateAndContainsOnlyPairingData(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "state.json")
++	if err := writeWebState(path, webState{State: "pending", Code: "ABCD", URL: "https://example.test/auth/login/device?code=ABCD"}); err != nil {
++		t.Fatal(err)
++	}
++	info, err := os.Stat(path)
++	if err != nil {
++		t.Fatal(err)
++	}
++	// Windows does not expose Unix permission bits.
++	if info.Mode().Perm()&0077 != 0 && os.PathSeparator != '\\' {
++		t.Fatalf("state is not private: %v", info.Mode())
++	}
++	data, _ := os.ReadFile(path)
++	var state map[string]any
++	if err := json.Unmarshal(data, &state); err != nil {
++		t.Fatal(err)
++	}
++	if state["Code"] != "ABCD" || state["State"] != "pending" {
++		t.Fatalf("unexpected state: %s", data)
++	}
++	if _, ok := state["Token"]; ok {
++		t.Fatal("token exposed")
++	}
++	if err := writeWebState("relative.json", webState{}); err == nil {
++		t.Fatal("accepted relative state path")
++	}
++}
++
++func TestWebOrganizationSelection(t *testing.T) {
++	orgs := []webOrg{{ID: "a"}, {ID: "b"}}
++	for _, tc := range []struct {
++		request, previous, want string
++		fail                    bool
++	}{
++		{"b", "a", "b", false}, {"", "a", "a", false},
++		{"", "", "", false}, {"unavailable", "", "", true},
++	} {
++		got, err := selectWebOrg(orgs, tc.request, tc.previous)
++		if got != tc.want || (err != nil) != tc.fail {
++			t.Fatalf("selection: %q, %v", got, err)
++		}
++	}
++	if got, _ := selectWebOrg(orgs[:1], "", ""); got != "a" {
++		t.Fatal("single organization not selected")
++	}
++}

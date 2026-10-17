@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in
+	start)
+		[ -x /etc/init.d/pangolin-auth ] || { echo 'Install the Pangolin client first.' >&2; exit 1; }
+		/etc/init.d/pangolin-auth restart
+		;;
+	cancel)
+		[ ! -x /etc/init.d/pangolin-auth ] || /etc/init.d/pangolin-auth stop
+		;;
+	logout)
+		[ ! -x /etc/init.d/pangolin ] || /etc/init.d/pangolin stop
+		[ ! -x /etc/init.d/pangolin-auth ] || /etc/init.d/pangolin-auth stop
+		rm -f /etc/pangolin/client/accounts.json /var/run/pangolin-auth/status.json
+		;;
+	*) echo 'Usage: pangolin-auth-action {start|cancel|logout}' >&2; exit 2;;
+esac

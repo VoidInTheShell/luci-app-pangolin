@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+
+action="${1:-}"
+case "$(uname -m)" in
+	x86_64|aarch64|arm64) ;;
+	*) echo 'Only x86_64 and ARM64 are supported.' >&2; exit 1 ;;
+esac
+case "$action" in
+	install)
+		if command -v apk >/dev/null 2>&1; then
+				case "$(uname -m)" in x86_64) cached=/etc/pangolin/packages/cli-x86_64.apk;; *) cached=/etc/pangolin/packages/cli-arm64.apk;; esac
+				# An administrator may retain a locally verified development APK.
+				# Never download unsigned packages or change repository trust here.
+				if [ -f "$cached" ]; then exec apk add --allow-untrusted "$cached"; fi
+			exec apk add pangolin-cli
+		elif command -v opkg >/dev/null 2>&1; then
+			opkg update && exec opkg install pangolin-cli
+		fi
+		echo 'No supported OpenWrt package manager found.' >&2
+		exit 1
+		;;
+	uninstall)
+		/etc/init.d/pangolin stop >/dev/null 2>&1 || true
+			/etc/init.d/pangolin-auth stop >/dev/null 2>&1 || true
+			[ ! -x /usr/libexec/pangolin-dns ] || /usr/libexec/pangolin-dns restore
+			[ ! -x /usr/libexec/pangolin-client-integration ] || /usr/libexec/pangolin-client-integration restore
+		if command -v apk >/dev/null 2>&1; then
+			exec apk del pangolin-cli
+		elif command -v opkg >/dev/null 2>&1; then
+			exec opkg remove pangolin-cli
+		fi
+		echo 'No supported OpenWrt package manager found.' >&2
+		exit 1
+		;;
+	*)
+		echo 'Usage: pangolin-package-action {install|uninstall}' >&2
+		exit 2
+		;;
+esac

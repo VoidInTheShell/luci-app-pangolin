@@ -1,0 +1,521 @@
+--- a/api/api.go
++++ b/api/api.go
+@@ -91,6 +91,7 @@
+ 
+ // StatusResponse is returned by the status endpoint
+ type StatusResponse struct {
++	DNSListener string `json:"dnsListener,omitempty"`
+ 	Connected       bool                    `json:"connected"`
+ 	Registered      bool                    `json:"registered"`
+ 	Terminated      bool                    `json:"terminated"`
+@@ -137,6 +138,7 @@
+ 	onSelectGateway  func(GatewayRequest) error
+ 	onDisableGateway func() error
+ 
++	dnsListener    string
+ 	statusMu       sync.RWMutex
+ 	peerStatuses   map[int]*PeerStatus
+ 	exitNodeStatus *ExitNodeStatus
+@@ -335,10 +337,20 @@
+ 	}
+ }
+ 
++// SetDNSListener reports the loopback address after both sockets start.
++func (s *API) SetDNSListener(address string) {
++	s.statusMu.Lock()
++	defer s.statusMu.Unlock()
++	s.dnsListener = address
++}
++
+ func (s *API) SetRegistered(registered bool) {
+ 	s.statusMu.Lock()
+ 	defer s.statusMu.Unlock()
+ 	s.isRegistered = registered
++	if !registered {
++		s.dnsListener = ""
++	}
+ 	// Clear any registration error when successfully registered
+ 	if registered {
+ 		s.olmError = nil
+@@ -544,6 +556,7 @@
+ 	resp := StatusResponse{
+ 		Connected:       s.isConnected,
+ 		Registered:      s.isRegistered,
++		DNSListener:     s.dnsListener,
+ 		Terminated:      s.isTerminated,
+ 		OlmError:        s.olmError,
+ 		Version:         s.version,
+@@ -716,6 +729,7 @@
+ 	return StatusResponse{
+ 		Connected:       s.isConnected,
+ 		Registered:      s.isRegistered,
++		DNSListener:     s.dnsListener,
+ 		Terminated:      s.isTerminated,
+ 		OlmError:        s.olmError,
+ 		Version:         s.version,
+--- a/dns/dns_proxy.go
++++ b/dns/dns_proxy.go
+@@ -30,6 +30,7 @@
+ 
+ // DNSProxy implements a DNS proxy using gvisor netstack
+ type DNSProxy struct {
++	hostListeners *hostDNSListeners
+ 	stack        *stack.Stack
+ 	ep           *channel.Endpoint
+ 	proxyIP      netip.Addr
+@@ -265,6 +266,7 @@
+ 
+ // Stop stops the DNS proxy
+ func (p *DNSProxy) Stop() {
++	p.StopHostListener()
+ 	if p.middleDevice != nil {
+ 		p.middleDevice.RemoveRule(p.proxyIP)
+ 		if p.tunnelDNS && p.tunnelIP.IsValid() {
+@@ -398,73 +400,45 @@
+ 		return
+ 	}
+ 
+-	if len(msg.Question) == 0 {
+-		logger.Debug("DNS query has no questions")
+-		return
+-	}
+-
+-	question := msg.Question[0]
+-	logger.Debug("DNS query for %s (type %s)", question.Name, dns.TypeToString[question.Qtype])
+-
+-	// If matchDomains is configured and this query's name doesn't match any of
+-	// the configured patterns, skip local records and upstream entirely and
+-	// send it straight to the host's own system DNS servers.
+-	if !p.matchesConfiguredDomains(question.Name) {
+-		logger.Debug("Query for %s does not match configured domains, forwarding to local DNS %v", question.Name, p.getLocalDNS())
+-		response := p.forwardToLocalDNS(msg)
+-		if response == nil {
+-			logger.Error("Failed to get DNS response for %s from local DNS", question.Name)
+-			return
+-		}
+-		responseData, err := response.Pack()
+-		if err != nil {
+-			logger.Error("Failed to pack DNS response: %v", err)
+-			return
+-		}
+-		if _, err := udpConn.WriteTo(responseData, clientAddr); err != nil {
+-			logger.Error("Failed to send DNS response: %v", err)
+-		}
+-		return
+-	}
+-
+-	// Check if we have local records for this query
+-	var response *dns.Msg
+-	if question.Qtype == dns.TypeA || question.Qtype == dns.TypeAAAA || question.Qtype == dns.TypePTR {
+-		response = p.checkLocalRecords(msg, question)
+-	}
+-
+-	// If a local A/AAAA record was found, notify the JIT handler so that the owning
+-	// site can be connected on-demand if it is not yet active.
+-	if response != nil && p.jitHandler != nil &&
+-		(question.Qtype == dns.TypeA || question.Qtype == dns.TypeAAAA) {
+-		if siteId, ok := p.recordStore.GetSiteIdForDomain(question.Name); ok && siteId != 0 {
+-			handler := p.jitHandler
+-			go handler(siteId)
+-		}
+-	}
+-
+-	// If no local records, forward to upstream
+-	if response == nil {
+-		logger.Debug("No local record for %s, forwarding upstream to %v", question.Name, p.upstreamDNS)
+-		response = p.forwardToUpstream(msg)
+-	}
+-
+-	if response == nil {
+-		logger.Error("Failed to get DNS response for %s", question.Name)
+-		return
+-	}
+-
+-	// Pack and send response
++	response := p.resolveDNSQuery(msg)
+ 	responseData, err := response.Pack()
+ 	if err != nil {
+ 		logger.Error("Failed to pack DNS response: %v", err)
+ 		return
+ 	}
+-
+-	_, err = udpConn.WriteTo(responseData, clientAddr)
+-	if err != nil {
++	if _, err := udpConn.WriteTo(responseData, clientAddr); err != nil {
+ 		logger.Error("Failed to send DNS response: %v", err)
+ 	}
++}
++
++// resolveDNSQuery is shared by the utility netstack and loopback UDP/TCP
++// listeners, so aliases, domain matching and JIT behavior stay identical.
++func (p *DNSProxy) resolveDNSQuery(msg *dns.Msg) *dns.Msg {
++	if len(msg.Question) != 1 || msg.Response {
++		return new(dns.Msg).SetRcode(msg, dns.RcodeFormatError)
++	}
++	question := msg.Question[0]
++	var response *dns.Msg
++	if !p.matchesConfiguredDomains(question.Name) {
++		response = p.forwardToLocalDNS(msg)
++	} else {
++		if question.Qtype == dns.TypeA || question.Qtype == dns.TypeAAAA || question.Qtype == dns.TypePTR {
++			response = p.checkLocalRecords(msg, question)
++		}
++		if response != nil && p.jitHandler != nil &&
++			(question.Qtype == dns.TypeA || question.Qtype == dns.TypeAAAA) {
++			if siteID, ok := p.recordStore.GetSiteIdForDomain(question.Name); ok && siteID != 0 {
++				go p.jitHandler(siteID)
++			}
++		}
++		if response == nil {
++			response = p.forwardToUpstream(msg)
++		}
++	}
++	if response == nil {
++		return new(dns.Msg).SetRcode(msg, dns.RcodeServerFailure)
++	}
++	return response
+ }
+ 
+ // checkLocalRecords checks if we have local records for the query
+--- /dev/null
++++ b/dns/host_listener.go
+@@ -0,0 +1,100 @@
++package dns
++
++import (
++	"fmt"
++	"net"
++	"sync"
++	"time"
++
++	"github.com/miekg/dns"
++)
++
++// hostDNSListeners exposes the same resolver to host applications such as
++// dnsmasq. The utility-netstack listener remains private to Pangolin.
++type hostDNSListeners struct {
++	udp *dns.Server
++	tcp *dns.Server
++	wg  sync.WaitGroup
++}
++
++// StartHostListener binds an explicit loopback address for both UDP and TCP.
++// Acquire both sockets before serving so an occupied port fails atomically.
++func (p *DNSProxy) StartHostListener(address string) error {
++	if address == "" {
++		return nil
++	}
++	if p.hostListeners != nil {
++		return fmt.Errorf("host DNS listener is already running")
++	}
++	host, _, err := net.SplitHostPort(address)
++	if err != nil || !net.ParseIP(host).IsLoopback() {
++		return fmt.Errorf("host DNS listener must use a loopback IP and port")
++	}
++	tcp, err := net.Listen("tcp", address)
++	if err != nil {
++		return fmt.Errorf("listen TCP %s: %w", address, err)
++	}
++	// With port 0 (used by tests), UDP must use the port TCP actually got.
++	udp, err := net.ListenPacket("udp", tcp.Addr().String())
++	if err != nil {
++		_ = tcp.Close()
++		return fmt.Errorf("listen UDP %s: %w", address, err)
++	}
++	handler := dns.HandlerFunc(func(w dns.ResponseWriter, query *dns.Msg) {
++		response := p.resolveDNSQuery(query)
++		if _, ok := w.RemoteAddr().(*net.UDPAddr); ok {
++			size := uint16(512)
++			if opt := query.IsEdns0(); opt != nil && opt.UDPSize() > size {
++				size = opt.UDPSize()
++			}
++			response.Truncate(int(size))
++		}
++		_ = w.WriteMsg(response)
++	})
++	h := &hostDNSListeners{
++		udp: &dns.Server{PacketConn: udp, Handler: handler},
++		tcp: &dns.Server{Listener: tcp, Handler: handler, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second},
++	}
++	ready := make(chan struct{}, 2)
++	startupErr := make(chan error, 2)
++	h.udp.NotifyStartedFunc = func() { ready <- struct{}{} }
++	h.tcp.NotifyStartedFunc = func() { ready <- struct{}{} }
++	p.hostListeners = h
++	h.wg.Add(2)
++	go func() {
++		defer h.wg.Done()
++		if err := h.udp.ActivateAndServe(); err != nil {
++			startupErr <- err
++		}
++	}()
++	go func() {
++		defer h.wg.Done()
++		if err := h.tcp.ActivateAndServe(); err != nil {
++			startupErr <- err
++		}
++	}()
++	for started := 0; started < 2; started++ {
++		select {
++		case <-ready:
++		case err := <-startupErr:
++			p.StopHostListener()
++			return fmt.Errorf("start host DNS listener: %w", err)
++		case <-time.After(2 * time.Second):
++			p.StopHostListener()
++			return fmt.Errorf("timeout starting host DNS listener")
++		}
++	}
++	return nil
++}
++
++// StopHostListener releases both sockets before closing the proxy netstack.
++func (p *DNSProxy) StopHostListener() {
++	h := p.hostListeners
++	if h == nil {
++		return
++	}
++	p.hostListeners = nil
++	_ = h.udp.Shutdown()
++	_ = h.tcp.Shutdown()
++	h.wg.Wait()
++}
+--- /dev/null
++++ b/dns/host_listener_test.go
+@@ -0,0 +1,82 @@
++package dns
++
++import (
++	"context"
++	"net"
++	"os"
++	"testing"
++	"time"
++
++	"github.com/miekg/dns"
++)
++
++func testHostProxy(t *testing.T) *DNSProxy {
++	t.Helper()
++	ctx, cancel := context.WithCancel(context.Background())
++	p := &DNSProxy{ctx: ctx, cancel: cancel, recordStore: NewDNSRecordStore()}
++	t.Cleanup(cancel)
++	if err := p.AddDNSRecord("printer.internal", net.ParseIP("10.22.33.44"), 0); err != nil {
++		t.Fatal(err)
++	}
++	return p
++}
++
++func TestHostListenerUDPAndTCPAndCleanup(t *testing.T) {
++	p := testHostProxy(t)
++	listenAddress := os.Getenv("PANGOLIN_TEST_DNS_ADDR")
++	if listenAddress == "" {
++		listenAddress = "127.0.0.1:0"
++	}
++	if err := p.StartHostListener(listenAddress); err != nil {
++		t.Fatal(err)
++	}
++	address := p.hostListeners.tcp.Listener.Addr().String()
++	defer p.StopHostListener()
++	for _, network := range []string{"udp", "tcp"} {
++		client := &dns.Client{Net: network, Timeout: time.Second}
++		query := new(dns.Msg).SetQuestion("printer.internal.", dns.TypeA)
++		response, _, err := client.Exchange(query, address)
++		if err != nil || response.Rcode != dns.RcodeSuccess || len(response.Answer) != 1 {
++			t.Fatalf("%s: response=%v error=%v", network, response, err)
++		}
++		if got := response.Answer[0].(*dns.A).A.String(); got != "10.22.33.44" {
++			t.Fatalf("%s returned %s", network, got)
++		}
++	}
++	p.StopHostListener()
++	p.StopHostListener()
++	udp, err := net.ListenPacket("udp", address)
++	if err != nil {
++		t.Fatal(err)
++	}
++	_ = udp.Close()
++	tcp, err := net.Listen("tcp", address)
++	if err != nil {
++		t.Fatal(err)
++	}
++	_ = tcp.Close()
++}
++
++func TestHostListenerOccupiedPortAndLoopbackOnly(t *testing.T) {
++	p := testHostProxy(t)
++	if err := p.StartHostListener("0.0.0.0:953"); err == nil {
++		t.Fatal("accepted wildcard bind")
++	}
++	occupied, err := net.ListenPacket("udp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer occupied.Close()
++	address := occupied.LocalAddr().String()
++	if err := p.StartHostListener(address); err == nil {
++		t.Fatal("accepted occupied UDP port")
++	}
++	if p.hostListeners != nil {
++		t.Fatal("partial listener survived failure")
++	}
++	tcp, err := net.Listen("tcp", address)
++	if err != nil {
++		t.Fatalf("TCP port leaked after UDP failure: %v", err)
++	}
++	_ = tcp.Close()
++}
+--- a/olm/connect.go
++++ b/olm/connect.go
+@@ -181,15 +181,15 @@
+ 		logger.Warn("Failed to parse tunnel IP %q: %v", interfaceIP, err)
+ 	}
+ 
+-	// The DNS proxy is always created - it resolves both exit node aliases
+-	// (unaffected by DisableRoutesAndAliasesOnExitNode - see connectExitNode)
+-	// and site resource aliases, which the peer manager created below adds
+-	// and removes dynamically as an exit node connects/disconnects (see
+-	// PeerManager.SetExitNode/ClearExitNode). o.dnsProxy is still nil-checked
+-	// everywhere it's used, in case creation itself fails.
+-	o.dnsProxy, err = dns.NewDNSProxy(o.middleDev, o.tunnelConfig.MTU, wgData.UtilitySubnet, o.tunnelConfig.UpstreamDNS, o.tunnelConfig.TunnelDNS, interfaceIP, o.tunnelConfig.MatchDomains, o.tunnelConfig.PublicDNS)
+-	if err != nil {
+-		logger.Error("Failed to create DNS proxy: %v", err)
++	// Full DNS disable is stronger than OverrideDNS=false: do not allocate a
++	// proxy, register packet handlers or start a listener in this mode.
++	if !o.tunnelConfig.DisableDNS {
++		o.dnsProxy, err = dns.NewDNSProxy(o.middleDev, o.tunnelConfig.MTU, wgData.UtilitySubnet, o.tunnelConfig.UpstreamDNS, o.tunnelConfig.TunnelDNS, interfaceIP, o.tunnelConfig.MatchDomains, o.tunnelConfig.PublicDNS)
++		if err != nil {
++			logger.Error("Failed to create DNS proxy: %v", err)
++			o.apiServer.SetOlmError("DNS_START_FAILED", err.Error())
++			return
++		}
+ 	}
+ 
+ 	// Tell the system DNS monitor to exclude the proxy IP so that subsequent
+@@ -212,13 +212,11 @@
+ 		}
+ 	}
+ 
+-	// The utility subnet route is what makes the DNS proxy (always created
+-	// above) reachable at all, so it's always added too, independent of
+-	// DisableRoutesAndAliasesOnExitNode - which only gates routes/aliases for
+-	// individual site resources, applied dynamically below as the peer
+-	// manager is told about the exit node's connection state.
+-	if err := network.AddRoutesWithSource([]string{wgData.UtilitySubnet}, o.tunnelConfig.InterfaceName, interfaceIP); err != nil { // also route the utility subnet
+-		logger.Error("Failed to add route for utility subnet: %v", err)
++	// The utility route only serves DNS. Do not add it when DNS is disabled.
++	if o.dnsProxy != nil {
++		if err := network.AddRoutesWithSource([]string{wgData.UtilitySubnet}, o.tunnelConfig.InterfaceName, interfaceIP); err != nil {
++			logger.Error("Failed to add route for utility subnet: %v", err)
++		}
+ 	}
+ 
+ 	// Create peer manager with integrated peer monitoring. If
+@@ -279,7 +277,21 @@
+ 	if o.dnsProxy != nil {
+ 		if err := o.dnsProxy.Start(); err != nil { // start DNS proxy first so there is no downtime
+ 			logger.Error("Failed to start DNS proxy: %v", err)
+-		}
++			o.apiServer.SetOlmError("DNS_START_FAILED", err.Error())
++			o.dnsProxy.Stop()
++			return
++		}
++
++		if o.tunnelConfig.DNSListenAddr != "" {
++			if err := o.dnsProxy.StartHostListener(o.tunnelConfig.DNSListenAddr); err != nil {
++				logger.Error("Failed to start host DNS listener: %v", err)
++				o.apiServer.SetOlmError("DNS_LISTEN_FAILED", err.Error())
++				o.dnsProxy.Stop()
++				return
++			}
++		}
++
++		o.apiServer.SetDNSListener(o.tunnelConfig.DNSListenAddr)
+ 
+ 		// Register JIT handler: when the DNS proxy resolves a local record, check whether
+ 		// the owning site is already connected and, if not, initiate a JIT connection.
+--- a/olm/dns_config.go
++++ b/olm/dns_config.go
+@@ -19,6 +19,12 @@
+ // from a later live "olm/wg/dns/update" push, where the running proxy is
+ // updated directly.
+ func (o *Olm) applyDNSConfigUpdate(cfg DNSConfigUpdate) {
++	// A server push must not override an administrator's full DNS disable.
++	if o.tunnelConfig.DisableDNS {
++		o.tunnelConfig.OverrideDNS = false
++		o.tunnelConfig.TunnelDNS = false
++		return
++	}
+ 	logger.Info("Applying DNS config from server: %+v", cfg)
+ 
+ 	if len(cfg.UpstreamDNS) > 0 {
+@@ -43,6 +49,13 @@
+ 		}
+ 	}
+ 
++	// The OpenWrt host listener is used as a dnsmasq upstream. Keep resolver
++	// takeover with dnsmasq; a server update must not point /etc/resolv.conf
++	// back at the private netstack listener on port 53.
++	if o.tunnelConfig.DNSListenAddr != "" {
++		disabled := false
++		cfg.OverrideDNS = &disabled
++	}
+ 	if cfg.OverrideDNS != nil && *cfg.OverrideDNS != o.tunnelConfig.OverrideDNS {
+ 		if o.dnsProxy != nil {
+ 			if err := o.applyDNSOverride(*cfg.OverrideDNS); err != nil {
+@@ -62,6 +75,12 @@
+ // (see handleConnect) and for a live "olm/wg/dns/update" toggle of
+ // OverrideDNS via applyDNSConfigUpdate.
+ func (o *Olm) applyDNSOverride(enable bool) error {
++	if o.tunnelConfig.DisableDNS {
++		return fmt.Errorf("DNS is disabled by local configuration")
++	}
++	if enable && o.tunnelConfig.DNSListenAddr != "" {
++		return fmt.Errorf("host listener mode leaves system DNS management to dnsmasq")
++	}
+ 	if o.dnsProxy == nil {
+ 		return fmt.Errorf("cannot toggle DNS override: DNS proxy is not running")
+ 	}
+--- /dev/null
++++ b/olm/dns_disabled_test.go
+@@ -0,0 +1,27 @@
++package olm
++
++import "testing"
++
++func TestFullDNSDisableIgnoresServerOverride(t *testing.T) {
++	o := &Olm{tunnelConfig: TunnelConfig{DisableDNS: true}}
++	enable := true
++	o.applyDNSConfigUpdate(DNSConfigUpdate{OverrideDNS: &enable, TunnelDNS: &enable, UpstreamDNS: []string{"1.1.1.1:53"}})
++	if o.tunnelConfig.OverrideDNS || o.tunnelConfig.TunnelDNS || o.dnsProxy != nil {
++		t.Fatal("server push enabled DNS despite local disable")
++	}
++	if err := o.applyDNSOverride(true); err == nil {
++		t.Fatal("full disable allowed a system DNS override")
++	}
++}
++
++func TestHostListenerRejectsSystemDNSOverride(t *testing.T) {
++	o := &Olm{tunnelConfig: TunnelConfig{DNSListenAddr: "127.0.0.1:953"}}
++	enable := true
++	o.applyDNSConfigUpdate(DNSConfigUpdate{OverrideDNS: &enable})
++	if o.tunnelConfig.OverrideDNS {
++		t.Fatal("server push enabled system DNS override in host listener mode")
++	}
++	if err := o.applyDNSOverride(true); err == nil {
++		t.Fatal("host listener allowed a direct system DNS override")
++	}
++}
+--- a/olm/types.go
++++ b/olm/types.go
+@@ -153,6 +153,10 @@
+ 
+ 	OverrideDNS bool
+ 	TunnelDNS   bool
++	// DisableDNS prevents proxy creation, utility routing and resolver takeover.
++	// DNSListenAddr optionally exposes the same resolver on a host loopback port.
++	DisableDNS    bool
++	DNSListenAddr string
+ 
+ 	// NativeDNSManaged indicates the DNS override is already applied natively by
+ 	// the host platform (e.g. NEDNSSettings on macOS/iOS), scoped to the tunnel

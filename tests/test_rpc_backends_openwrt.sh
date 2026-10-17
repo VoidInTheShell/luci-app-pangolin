@@ -109,7 +109,7 @@ assert_rpc_success() {
 }
 
 assert_rpc_success luci.pangolin set_config \
-	'{"config":{"endpoint":"https://app.pangolin.net","auth_mode":"credentials","id":"rpc-test-site","secret":"rpc-test-secret","enabled":"1","local_endpoint_interfaces":[],"tls_client_ca":[]}}'
+	'{"config":{"endpoint":"https://app.pangolin.net","role":"site","auth_mode":"credentials","id":"rpc-test-site","secret":"rpc-test-secret","enabled":"1","local_endpoint_interfaces":[],"tls_client_ca":[]},"apply":true}'
 assert_rpc_success luci.newt set_config \
 	'{"config":{"endpoint":"https://app.pangolin.net","auth_mode":"credentials","id":"rpc-test-site","secret":"rpc-test-secret","enabled":"1","local_endpoint_interfaces":[],"tls_client_ca":[]}}'
 

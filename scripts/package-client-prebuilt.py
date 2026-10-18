@@ -43,8 +43,9 @@ def copy(source, root, target, mode):
 
 def package_version(name):
     makefile = (repo / 'packages' / name / 'Makefile').read_text()
-    version = re.search(r'^PKG_VERSION:=(\S+)', makefile, re.M).group(1)
-    release = re.search(r'^PKG_RELEASE:=(\S+)', makefile, re.M).group(1)
+    default = re.search(r'^CLI_VERSION:=(\S+)', makefile, re.M)
+    version = os.environ.get('PANGOLIN_PACKAGE_VERSION') or (default.group(1) if default else '1.0.0')
+    release = os.environ.get('PANGOLIN_PACKAGE_RELEASE') or re.search(r'^PKG_RELEASE:=.*,(\d+)\)', makefile, re.M).group(1)
     return version + '-r' + release
 
 def package(root, name, version, arch, description, depends, scripts):

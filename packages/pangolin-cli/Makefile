@@ -1,13 +1,14 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=pangolin-cli
-PKG_VERSION:=0.18.1
-PKG_RELEASE:=6
+CLI_VERSION:=0.18.1
+PKG_VERSION:=$(if $(PANGOLIN_PACKAGE_VERSION),$(PANGOLIN_PACKAGE_VERSION),$(CLI_VERSION))
+PKG_RELEASE:=$(if $(PANGOLIN_PACKAGE_RELEASE),$(PANGOLIN_PACKAGE_RELEASE),6)
 
-PKG_SOURCE:=cli-$(PKG_VERSION).tar.gz
-PKG_SOURCE_URL:=https://codeload.github.com/fosrl/cli/tar.gz/refs/tags/$(PKG_VERSION)?
+PKG_SOURCE:=cli-$(CLI_VERSION).tar.gz
+PKG_SOURCE_URL:=https://codeload.github.com/fosrl/cli/tar.gz/refs/tags/$(CLI_VERSION)?
 PKG_HASH:=568fcbf62a1c485d8cec617c635ae5769ff5d6729bcf412a7f0d13efb3d498ad
-PKG_BUILD_DIR:=$(BUILD_DIR)/cli-$(PKG_VERSION)
+PKG_BUILD_DIR:=$(BUILD_DIR)/cli-$(CLI_VERSION)
 
 NEWT_VERSION:=1.18.1
 NEWT_SOURCE:=newt-$(NEWT_VERSION).tar.gz
@@ -28,7 +29,7 @@ PKG_BUILD_FLAGS:=no-mips16
 GO_PKG:=github.com/fosrl/cli
 GO_PKG_BUILD_PKG:=$(GO_PKG)
 GO_PKG_LDFLAGS_X= \
-	github.com/fosrl/cli/internal/version.Version=$(PKG_VERSION) \
+	github.com/fosrl/cli/internal/version.Version=$(CLI_VERSION) \
 	github.com/fosrl/cli/internal/version.NewtVersionOverride=$(NEWT_VERSION) \
 	github.com/fosrl/cli/internal/config.ManagedBy=openwrt
 

@@ -9,6 +9,13 @@ package_arch="${OPENWRT_PACKAGE_ARCH:-aarch64_generic}"
 sdk_name="openwrt-sdk-${openwrt_version}-${openwrt_target}-${openwrt_subtarget}_gcc-14.3.0_musl.Linux-x86_64"
 sdk_archive="${sdk_name}.tar.zst"
 sdk_sha256="59194a023968398af64bfa7d8bc3eac322641f6dc9cdbade28a4d9dd41866eba"
+case "${openwrt_version}/${openwrt_target}/${openwrt_subtarget}/${package_arch}" in
+	25.12.5/rockchip/armv8/aarch64_generic) ;;
+	25.12.5/x86/64/x86_64) sdk_sha256="0c8df0151a1e88feb7c03d694d61f6a18d51872815b7c811d76e2b77504d5e9c" ;;
+	*) echo 'No checksum pin for the requested SDK/architecture.' >&2; exit 1 ;;
+esac
+public_key="${OPENWRT_PUBLIC_KEY_FILE:-$repo_root/keys/openwrt-newt-public-key.pem}"
+public_key_name="$(basename "$public_key")"
 sdk_url="https://downloads.openwrt.org/releases/${openwrt_version}/targets/${openwrt_target}/${openwrt_subtarget}/${sdk_archive}"
 cache_dir="${OPENWRT_CACHE_DIR:-${repo_root}/.cache}"
 sdk_dir="${OPENWRT_SDK_DIR:-${cache_dir}/${sdk_name}}"
@@ -103,11 +110,10 @@ if [ -n "${OPENWRT_APK_PRIVATE_KEY_FILE:-}" ]; then
 		echo 'Signing requires openssl.' >&2
 		exit 1
 	}
-	derived_public_key="$sdk_dir/openwrt-newt-public-key.pem"
+	derived_public_key="$sdk_dir/$public_key_name"
 	openssl pkey -in "$OPENWRT_APK_PRIVATE_KEY_FILE" -pubout -out "$derived_public_key"
-	if [ -f "$repo_root/keys/openwrt-newt-public-key.pem" ] && \
-	   ! cmp -s "$derived_public_key" "$repo_root/keys/openwrt-newt-public-key.pem"; then
-		echo 'The signing key does not match keys/openwrt-newt-public-key.pem.' >&2
+	if ! cmp -s "$derived_public_key" "$public_key"; then
+		echo 'The signing key does not match the configured public key.' >&2
 		exit 1
 	fi
 	install -m 0600 "$OPENWRT_APK_PRIVATE_KEY_FILE" "$temporary_signing_key"
@@ -159,16 +165,18 @@ for package_name in newt luci-app-newt pangolin-cli luci-app-pangolin; do
 done
 
 make defconfig
-make package/newt/compile
-make package/luci-app-newt/compile
+if [ "${PANGOLIN_CLIENT_ONLY:-0}" != 1 ]; then
+	make package/newt/compile
+	make package/luci-app-newt/compile
+fi
 # The package declares kmod-tun as a runtime dependency, but the release SDK
 # does not need to rebuild OpenWrt's official kernel package to compile this
 # static Go binary. Without NO_DEPS the kernel package target emits every
 # target-default module, which is both unnecessary and prohibitively slow
 # under x86 emulation on Apple Silicon. ImageBuilder and apk resolve the exact
 # release-matched kmod-tun from the official OpenWrt repository.
-make package/pangolin-cli/compile NO_DEPS=1
-make package/luci-app-pangolin/compile NO_DEPS=1
+make package/pangolin-cli/compile NO_DEPS=1 V=s
+make package/luci-app-pangolin/compile V=s
 make package/index
 
 newt_apk="$(find bin/packages -type f -name 'newt-*.apk' -print -quit)"
@@ -177,6 +185,7 @@ pangolin_apk="$(find bin/packages -type f -name 'pangolin-cli-*.apk' -print -qui
 luci_pangolin_apk="$(find bin/packages -type f -name 'luci-app-pangolin-*.apk' -print -quit)"
 host_apk="$sdk_dir/staging_dir/host/bin/apk"
 
+if [ "${PANGOLIN_CLIENT_ONLY:-0}" != 1 ]; then
 [ -n "$newt_apk" ] && [ -f "$newt_apk" ] || {
 	echo 'Newt APK was not produced.' >&2
 	exit 1
@@ -185,6 +194,7 @@ host_apk="$sdk_dir/staging_dir/host/bin/apk"
 	echo 'LuCI APK was not produced.' >&2
 	exit 1
 }
+fi
 [ -n "$pangolin_apk" ] && [ -f "$pangolin_apk" ] || {
 	echo 'Pangolin CLI APK was not produced.' >&2
 	exit 1
@@ -201,8 +211,10 @@ host_apk="$sdk_dir/staging_dir/host/bin/apk"
 # The SDK may retain an earlier development signature on cached package files.
 # Normalize every release artifact to the configured stable key instead of
 # trusting incremental package-signing state.
+package_files=("$pangolin_apk" "$luci_pangolin_apk")
+if [ "${PANGOLIN_CLIENT_ONLY:-0}" != 1 ]; then package_files+=("$newt_apk" "$luci_apk"); fi
 if [ -n "${OPENWRT_APK_PRIVATE_KEY_FILE:-}" ]; then
-	for package_file in "$newt_apk" "$luci_apk" "$pangolin_apk" "$luci_pangolin_apk"; do
+	for package_file in "${package_files[@]}"; do
 		"$host_apk" adbsign --allow-untrusted --reset-signatures \
 			--sign-key "$sdk_dir/private-key.pem" \
 			"$package_file"
@@ -214,17 +226,14 @@ fi
 # equally deterministic when reproduced from a developer workstation.
 rm -f "$output_dir"/newt-*.apk "$output_dir"/luci-app-newt-*.apk \
 	"$output_dir"/pangolin-cli-*.apk "$output_dir"/luci-app-pangolin-*.apk
-install -m 0644 "$newt_apk" "$output_dir/"
-install -m 0644 "$luci_apk" "$output_dir/"
-install -m 0644 "$pangolin_apk" "$output_dir/"
-install -m 0644 "$luci_pangolin_apk" "$output_dir/"
+for package_file in "${package_files[@]}"; do install -m 0644 "$package_file" "$output_dir/"; done
 
 sign_args=()
 if [ -n "${OPENWRT_APK_PRIVATE_KEY_FILE:-}" ]; then
 	sign_args=(--sign-key "$sdk_dir/private-key.pem")
 fi
 
-rm -f "$output_dir/packages.adb" "$output_dir/index.json" "$output_dir/openwrt-newt-public-key.pem"
+rm -f "$output_dir/packages.adb" "$output_dir/index.json" "$output_dir/$public_key_name"
 (
 	cd "$output_dir"
 	"$host_apk" mkndx \
@@ -239,14 +248,14 @@ rm -f "$output_dir/packages.adb" "$output_dir/index.json" "$output_dir/openwrt-n
 )
 
 if [ -n "${OPENWRT_APK_PRIVATE_KEY_FILE:-}" ]; then
-	install -m 0644 "$sdk_dir/openwrt-newt-public-key.pem" "$output_dir/openwrt-newt-public-key.pem"
+	install -m 0644 "$sdk_dir/$public_key_name" "$output_dir/$public_key_name"
 fi
 
 (
 	cd "$output_dir"
 	sha256sum ./*.apk ./packages.adb ./index.json > packages-sha256sums
-	if [ -f openwrt-newt-public-key.pem ]; then
-		sha256sum ./openwrt-newt-public-key.pem >> packages-sha256sums
+	if [ -f "$public_key_name" ]; then
+		sha256sum "./$public_key_name" >> packages-sha256sums
 	fi
 )
 

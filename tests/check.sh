@@ -30,6 +30,7 @@ node --check "$repo_root/packages/luci-app-newt/htdocs/luci-static/resources/vie
 node --check "$repo_root/packages/luci-app-pangolin/htdocs/luci-static/resources/view/pangolin/overview.js"
 node "$repo_root/tests/test_pangolin_client_ui.mjs"
 python3 "$repo_root/tests/test_package_files.py"
+python3 "$repo_root/tests/test_release_version.py"
 python3 -c 'import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text())' \
 	"$repo_root/tests/verify_artifacts.py"
 "$repo_root/tests/test_pangolin_network.sh"
@@ -108,10 +109,8 @@ jq -e . "$repo_root/packages/luci-app-pangolin/root/usr/share/rpcd/acl.d/luci-ap
 grep -q 'PKG_VERSION:=1.18.1' "$repo_root/packages/newt/Makefile"
 grep -q 'PKG_RELEASE:=3' "$repo_root/packages/newt/Makefile"
 grep -q 'PKG_RELEASE:=4' "$repo_root/packages/luci-app-newt/Makefile"
-grep -q 'PKG_RELEASE:=6' "$repo_root/packages/pangolin-cli/Makefile"
-grep -q 'PKG_RELEASE:=14' "$repo_root/packages/luci-app-pangolin/Makefile"
 grep -q 'PKG_HASH:=e3e66632a3ca2eeb950cb74e087ca837e7eee98a9e0816fcc1e4528a355ccd18' "$repo_root/packages/newt/Makefile"
-grep -q 'PKG_VERSION:=0.18.1' "$repo_root/packages/pangolin-cli/Makefile"
+grep -q 'CLI_VERSION:=0.18.1' "$repo_root/packages/pangolin-cli/Makefile"
 grep -q 'PKG_HASH:=568fcbf62a1c485d8cec617c635ae5769ff5d6729bcf412a7f0d13efb3d498ad' "$repo_root/packages/pangolin-cli/Makefile"
 grep -q 'OLM_HASH:=9de2a1b9daa21ce20b6642c2b948ab9616690800dbc0094835d2f711e3295f1a' "$repo_root/packages/pangolin-cli/Makefile"
 grep -q 'option enabled' "$repo_root/packages/newt/files/newt.config"
@@ -140,7 +139,7 @@ grep -q 'site-started' "$repo_root/packages/pangolin-cli/files/pangolin-site-run
 grep -q 'mkdir -p "$HOME"' "$repo_root/packages/pangolin-cli/files/pangolin-site-run"
 grep -q 'temporary_signing_key' "$repo_root/scripts/build-openwrt.sh"
 grep -q 'package/pangolin-cli/compile NO_DEPS=1' "$repo_root/scripts/build-openwrt.sh"
-grep -q 'release_args+=(--prerelease)' "$repo_root/.github/workflows/build.yml"
+grep -q -- '--prerelease --latest=false' "$repo_root/.github/workflows/build.yml"
 if grep -Rq 'readCommand(\[' \
 	"$repo_root/packages/luci-app-newt/root/usr/share/rpcd/ucode" \
 	"$repo_root/packages/luci-app-pangolin/root/usr/share/rpcd/ucode"; then

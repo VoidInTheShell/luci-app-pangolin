@@ -1,143 +1,43 @@
-# Pangolin site connector for OpenWrt
+# luci-app-pangolin
 
-Native OpenWrt packaging and LuCI management for the official
-[Pangolin CLI](https://github.com/fosrl/cli). The service executes
-`pangolin up site` directly under `procd`; Docker and systemd are not required.
+在 OpenWrt 上安装、认证、配置和管理官方 Pangolin **客户端**，可选启用官方 Subnet Router。基于 [alexanderjlynn/openwrt-newt](https://github.com/alexanderjlynn/openwrt-newt) fork 开发，保留上游许可证与站点连接器兼容代码。
 
-The LuCI app manages this router's site credentials, process, status, logs, and
-advanced connector settings. Pangolin remains the control plane for resources,
-targets, access policy, and clients. The legacy `newt`/`luci-app-newt` packages
-remain in the feed only for existing installations.
+支持 OpenWrt **25.12.5 / APK v3**，提供 **ARM64 (`aarch64_generic`)** 和 **x86_64** 安装包，不支持 32 位。上游固定版本：Pangolin CLI 0.18.1、Newt 1.18.1、OLM 1.10.1。
 
-| Component | Pinned version |
-| --- | --- |
-| OpenWrt | 25.12.5 |
-| R5C target / package architecture | `rockchip/armv8` / `aarch64_generic` |
-| Pangolin CLI | 0.18.1 |
-| Embedded Newt | 1.18.1 |
-| Package format | OpenWrt APK v3 |
+## 安装
 
-The current known-good stable release is
-[`v0.18.1-openwrt3-rc1`](https://github.com/alexanderjlynn/openwrt-newt/releases/tag/v0.18.1-openwrt3-rc1).
-This tested candidate was promoted to stable after the user confirmed operation
-on a NanoPi R5C. The original tag is retained to preserve download links.
-The default feed below now includes its native-TUN integration.
-
-## Install
-
-Add the signed package feed over SSH:
+从本仓库 [Releases](https://github.com/VoidInTheShell/luci-app-pangolin/releases) 下载与设备 `apk --print-arch` 一致的压缩包。开发版标记为 Pre-release；正式版由维护者手动打 tag 后发布。检查 Release 的 `SHA256SUMS`，解压后将文件复制到设备 `/tmp/pangolin-release`，执行：
 
 ```sh
-wget -O /tmp/openwrt-newt-public-key.pem \
-  https://github.com/alexanderjlynn/openwrt-newt/releases/latest/download/openwrt-newt-public-key.pem
-echo '54a584f2a271bddb263225be0ed7e972fd506529adcc03993a8e50bac32c7546  /tmp/openwrt-newt-public-key.pem' \
-  | sha256sum -c -
-cp /tmp/openwrt-newt-public-key.pem /etc/apk/keys/openwrt-newt-public-key.pem
-chmod 0644 /etc/apk/keys/openwrt-newt-public-key.pem
-echo 'https://github.com/alexanderjlynn/openwrt-newt/releases/latest/download/packages.adb' \
-  > /etc/apk/repositories.d/openwrt-newt.list
-apk update
-apk add luci-app-pangolin
-```
-
-Then open **Services → Pangolin**, enter the endpoint plus the Site ID and
-secret shown by Pangolin, enable the connector, and save. The endpoint is an
-HTTPS URL; include `:port` only when Pangolin uses a non-default public port.
-
-The default and recommended connector uses Newt's userspace netstack, so it
-does not create an OpenWrt interface. The app exposes upstream `native-main`
-as an explicitly experimental option and can register its TUN with netifd and
-firewall4. Do not enable it merely for reverse proxying.
-
-See [installation and troubleshooting](docs/INSTALLING.md) for LuCI upload and
-verification. See [Firmware Selector and first boot](docs/IMAGEBUILDER.md) for
-a paste-ready `uci-defaults` script.
-
-### Upgrade to the promoted native-main release
-
-The promoted stable release is
-[`v0.18.1-openwrt3-rc1`](https://github.com/alexanderjlynn/openwrt-newt/releases/tag/v0.18.1-openwrt3-rc1).
-It is available from the stable feed above. Existing stable-feed users can
-run `apk update` followed by `apk add --upgrade pangolin-cli luci-app-pangolin`.
-For an explicitly pinned installation, the original candidate repository URL
-also remains available:
-
-```sh
-test -s /etc/apk/keys/openwrt-newt-public-key.pem || {
-  echo "OpenWrt Newt signing key is missing"
-  exit 1
-}
-
-echo 'https://github.com/alexanderjlynn/openwrt-newt/releases/download/v0.18.1-openwrt3-rc1/packages.adb' \
-  > /etc/apk/repositories.d/openwrt-newt-rc.list
-
-apk update
-apk add --upgrade pangolin-cli luci-app-pangolin
-
+cd /tmp/pangolin-release
+sha256sum -c packages-sha256sums
+cp pangolin-public-key.pem /etc/apk/keys/pangolin-public-key.pem
+apk add ./pangolin-cli-*.apk ./luci-app-pangolin-*.apk
 /etc/init.d/rpcd restart
-/etc/init.d/pangolin restart
 ```
 
-Verify the installed revisions:
+签名公钥同时位于 [keys/pangolin-public-key.pem](keys/pangolin-public-key.pem)。首次信任前应核对公钥与发布页校验值。包内不包含设备配置、账户或密钥，安装不会自动启动 VPN。
 
-```sh
-apk list -I | grep -E '^(pangolin-cli|luci-app-pangolin)-'
-```
+打开 **LuCI → VPN → Pangolin**，填写 HTTPS 服务器地址，点击认证，使用认证窗口显示的配对码完成登录。设备已认证后，勾选“启用 Pangolin 服务”，点击“保存并应用”。“保存”只保存配置；开机自启是独立状态按钮。
 
-Expected:
+## 客户端功能
 
-```text
-pangolin-cli-0.18.1-r2
-luci-app-pangolin-1.0.0-r3
-```
+- 自动识别 ARM64 / x86_64，显示安装、认证、连接和进程状态，提供安装/卸载、停止/重启及日志。
+- 网页设备认证或客户端 ID/密钥；独立认证窗口完成配对，不依赖原 LuCI 标签页保持活跃。
+- Subnet Router 默认关闭，启用后使用官方 IPv4 资源路由、转发和 SNAT。
+- DNS 默认**完全关闭**。可启用本机 UDP/TCP DNS，实际监听 `127.0.0.1:<端口>`，默认 `953`，并可选配置 dnsmasq 上游接管；拒绝使用 53 端口。本应用不创建 DNS 劫持规则。
+- 可选管理 OpenWrt 接口、防火墙区和 LAN 到 Pangolin 的转发，按所有权记录在停止/卸载时撤销。
+- 可选为 Pangolin 客户端和认证进程配置 Nikki DNS/代理绕过。LAN 转发流量仍需在 Nikki 按远端目的网段配置绕过；进程绕过不等于所有局域网流量绕过。
+- “优先使用本地路由”增加隧道路由 metric，相同前缀下优先现有本地路由，更具体的隧道路由仍可能优先；此选项不处理 DNS 和 Nikki。
 
-An installed `newt-1.18.1-r3` is the separate
-legacy connector package; Pangolin CLI embeds Newt 1.18.1 and does not use
-that standalone executable. After confirming **Services → Pangolin** connects
-without the legacy service, the unused pair may be removed with
-`apk del luci-app-newt newt`.
+Tailscale、ZeroTier 和 Mihomo/Nikki 的其他路由、DNS 与策略仍需按实际环境联合验收。ARM64 CPE 已验证设备本机资源 ping、认证和生命周期清理；不将这些结果扩展为所有设备/局域网流量的保证。
 
-If the stable feed is configured, the temporary `openwrt-newt-rc.list` is no
-longer needed; remove it and run `apk update`. Removing a feed does not
-downgrade installed packages.
+## 分支与自动发布
 
-Then select **Services → Pangolin → Network → Main tunnel networking
-→ Native Linux TUN (experimental)**, enable **Register native interface
-with OpenWrt**, and save. See
-[native-main prerelease testing](docs/NATIVE-MAIN-TESTING.md) for validation,
-firewall behavior, and rollback instructions.
+- `dev`：从 `main` 创建，合入功能分支后，每次 commit 推送自动检查、构建、签名并发布双架构开发版。
+- `main`：用户手动选择版本合入，只构建检查，不自动发正式版。
+- `v<VERSION>` tag：用户在主线已包含的提交上手动创建，触发正式版发布。
 
-LuCI displays the native interface protocol as **Unmanaged** because Pangolin
-owns the TUN and its addresses. A TUN carries IP packets without Ethernet
-headers, so no MAC address is expected. Keep protocol `none`; do not configure
-DHCP, a static address, or an artificial MAC to change those displays.
+`VERSION` 保存产品基础版本（当前 `1.1.0`）。开发版 tag 为 `v1.1.0-dev.<run>.<attempt>`，APK 版本为 `1.1.0_pre<run>-r<attempt>`；正式版 tag 为 `v1.1.0`，APK 版本为 `1.1.0-r0`。两类 APK 使用产品版本；客户端 `pangolin version` 仍报告实际捆绑的上游 CLI 版本。
 
-## Build and verify
-
-```sh
-./tests/check.sh
-./tests/test_rpc_backends_openwrt.sh
-./scripts/build-in-docker.sh
-./scripts/verify-artifacts-in-docker.sh
-./scripts/build-r5c-image-in-docker.sh
-```
-
-The pipeline uses checksum-pinned source archives and the OpenWrt 25.12.5 SDK,
-cross-compiles AArch64 APKs, executes both RPC backends inside stock OpenWrt
-25.12.5 `rpcd`/`ubus`, runs the ARM64 binaries under QEMU, verifies package
-signatures/metadata/modes, and builds NanoPi R5C sysupgrade images.
-
-## Documentation
-
-- [Installation and troubleshooting](docs/INSTALLING.md)
-- [Native-main prerelease testing](docs/NATIVE-MAIN-TESTING.md)
-- [Firmware Selector, first boot, and ImageBuilder](docs/IMAGEBUILDER.md)
-- [Configuration reference](docs/CONFIGURATION.md)
-- [Architecture and security model](docs/ARCHITECTURE.md)
-- [Building and publishing](docs/BUILDING.md)
-- [Maintainer handoff](docs/MAINTAINER-HANDOFF.md)
-
-Repository documentation is canonical so code and instructions remain at the
-same reviewed revision. Integration code is Apache-2.0; the built Fossorial
-components retain their AGPL-3.0/commercial licensing terms and the packages
-declare AGPL-3.0.
+详见 [发布与版本规则](docs/RELEASING.md)。旧 `docs/INSTALLING.md`、镜像构建和 Newt 文档保留上游历史说明；当前客户端安装与发布以本 README 和 RELEASING 为准。

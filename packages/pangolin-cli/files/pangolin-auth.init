@@ -1,0 +1,27 @@
+#!/bin/sh /etc/rc.common
+USE_PROCD=1
+START=96
+
+start_service() {
+	config_load pangolin
+	local endpoint
+	config_get endpoint main endpoint https://app.pangolin.net
+	case "$endpoint" in https://?*) ;; *) echo 'An HTTPS endpoint is required' >&2; return 1;; esac
+	[ -x /usr/bin/pangolin ] || return 1
+	umask 077
+	mkdir -p /var/run/pangolin-auth /etc/pangolin/client
+	chmod 0700 /var/run/pangolin-auth /etc/pangolin /etc/pangolin/client
+	rm -f /var/run/pangolin-auth/status.json
+	printf '%s\n' '{"State":"starting"}' > /var/run/pangolin-auth/status.json
+	touch /var/run/pangolin-auth/active
+	procd_open_instance login
+	procd_set_param command /usr/libexec/pangolin-auth-run
+	procd_set_param term_timeout 5
+	procd_close_instance
+}
+
+stop_service() {
+	rm -f /var/run/pangolin-auth/active
+	/usr/libexec/pangolin-client-integration stop-auth || true
+	rm -f /var/run/pangolin-auth/status.json
+}

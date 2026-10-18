@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+case "$1" in
+	integration) worker=/usr/libexec/pangolin-client-integrate.uc ;;
+	dns) worker=/usr/libexec/pangolin-dns.uc ;;
+	*) exit 2 ;;
+esac
+lockdir="/var/lock/pangolin-$1.lock"
+shift
+umask 077
+mkdir -p /var/lock
+attempt=0
+while ! mkdir "$lockdir" 2>/dev/null; do
+	pid="$(cat "$lockdir/pid" 2>/dev/null || true)"
+	case "$pid" in
+		''|*[!0-9]*) ;;
+		*) if ! kill -0 "$pid" 2>/dev/null; then
+			rm -f "$lockdir/pid"
+			rmdir "$lockdir" 2>/dev/null || true
+		fi ;;
+	esac
+	attempt=$((attempt + 1))
+	[ "$attempt" -lt 75 ] || { echo 'Pangolin integration is busy; retry later.' >&2; exit 1; }
+	sleep 0.2
+done
+echo "$$" > "$lockdir/pid"
+cleanup() { rm -f "$lockdir/pid"; rmdir "$lockdir" 2>/dev/null || true; }
+trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+ucode "$worker" "$@"

@@ -12,6 +12,12 @@ sh -n "$repo_root/packages/newt/files/newt-run"
 sh -n "$repo_root/packages/newt/files/configure-newt"
 sh -n "$repo_root/packages/newt/files/newt-service-action"
 sh -n "$repo_root/packages/pangolin-cli/files/pangolin.init"
+sh -n "$repo_root/packages/pangolin-cli/files/pangolin-client-run"
+sh -n "$repo_root/packages/pangolin-cli/files/pangolin-client-watch"
+sh -n "$repo_root/packages/pangolin-cli/files/pangolin-auth.init"
+sh -n "$repo_root/packages/pangolin-cli/files/pangolin-auth-run"
+sh -n "$repo_root/packages/luci-app-pangolin/root/usr/libexec/pangolin-auth-action"
+sh -n "$repo_root/packages/luci-app-pangolin/root/usr/libexec/pangolin-package-action"
 sh -n "$repo_root/packages/pangolin-cli/files/pangolin-network"
 sh -n "$repo_root/packages/pangolin-cli/files/pangolin-service-action"
 sh -n "$repo_root/packages/pangolin-cli/files/pangolin-site-run"
@@ -22,6 +28,8 @@ sh -n "$repo_root/examples/uci-defaults/99-pangolin-from-feed"
 bash -n "$repo_root/tests/test_rpc_backends_openwrt.sh"
 node --check "$repo_root/packages/luci-app-newt/htdocs/luci-static/resources/view/newt/overview.js"
 node --check "$repo_root/packages/luci-app-pangolin/htdocs/luci-static/resources/view/pangolin/overview.js"
+node "$repo_root/tests/test_pangolin_client_ui.mjs"
+python3 "$repo_root/tests/test_package_files.py"
 python3 -c 'import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text())' \
 	"$repo_root/tests/verify_artifacts.py"
 "$repo_root/tests/test_pangolin_network.sh"
@@ -43,6 +51,10 @@ required_files=(
 	"packages/pangolin-cli/files/pangolin.config"
 	"packages/pangolin-cli/files/newt-version"
 	"packages/pangolin-cli/files/pangolin.init"
+	"packages/pangolin-cli/files/pangolin-client-run"
+	"packages/pangolin-cli/files/pangolin-client-watch"
+	"packages/pangolin-cli/files/pangolin-dns"
+	"packages/luci-app-pangolin/root/usr/libexec/pangolin-package-action"
 	"packages/pangolin-cli/files/configure-pangolin"
 	"packages/pangolin-cli/files/pangolin-network"
 	"packages/pangolin-cli/files/pangolin-service-action"
@@ -50,7 +62,9 @@ required_files=(
 	"packages/pangolin-cli/files/pangolin-site-sync-credentials"
 	"packages/pangolin-cli/files/dependency-patches/010-redact-newt-sensitive-logging.patch"
 	"packages/pangolin-cli/files/dependency-patches/020-restrict-olm-api-socket.patch"
+	"packages/pangolin-cli/files/dependency-patches/030-client-dns-control.patch"
 	"packages/pangolin-cli/patches/010-use-patched-tunnel-modules.patch"
+	"packages/pangolin-cli/patches/020-client-dns-control.patch"
 	"packages/luci-app-pangolin/Makefile"
 	"packages/luci-app-pangolin/root/usr/share/luci/menu.d/luci-app-pangolin.json"
 	"packages/luci-app-pangolin/root/usr/share/rpcd/acl.d/luci-app-pangolin.json"
@@ -94,8 +108,8 @@ jq -e . "$repo_root/packages/luci-app-pangolin/root/usr/share/rpcd/acl.d/luci-ap
 grep -q 'PKG_VERSION:=1.18.1' "$repo_root/packages/newt/Makefile"
 grep -q 'PKG_RELEASE:=3' "$repo_root/packages/newt/Makefile"
 grep -q 'PKG_RELEASE:=4' "$repo_root/packages/luci-app-newt/Makefile"
-grep -q 'PKG_RELEASE:=2' "$repo_root/packages/pangolin-cli/Makefile"
-grep -q 'PKG_RELEASE:=3' "$repo_root/packages/luci-app-pangolin/Makefile"
+grep -q 'PKG_RELEASE:=6' "$repo_root/packages/pangolin-cli/Makefile"
+grep -q 'PKG_RELEASE:=14' "$repo_root/packages/luci-app-pangolin/Makefile"
 grep -q 'PKG_HASH:=e3e66632a3ca2eeb950cb74e087ca837e7eee98a9e0816fcc1e4528a355ccd18' "$repo_root/packages/newt/Makefile"
 grep -q 'PKG_VERSION:=0.18.1' "$repo_root/packages/pangolin-cli/Makefile"
 grep -q 'PKG_HASH:=568fcbf62a1c485d8cec617c635ae5769ff5d6729bcf412a7f0d13efb3d498ad' "$repo_root/packages/pangolin-cli/Makefile"
@@ -111,7 +125,10 @@ grep -q 'kmod-tun' "$repo_root/packages/pangolin-cli/Makefile"
 grep -q 'uci -q set network.pangolin.device="$interface_name"' "$repo_root/packages/pangolin-cli/files/pangolin-network"
 grep -q 'os.Chmod(socketPath, 0600)' "$repo_root/packages/pangolin-cli/files/dependency-patches/020-restrict-olm-api-socket.patch"
 grep -q 'procd_open_instance site' "$repo_root/packages/pangolin-cli/files/pangolin.init"
-grep -q 'instances?.site' "$repo_root/packages/luci-app-pangolin/root/usr/share/rpcd/ucode/luci.pangolin"
+grep -q 'instances?.\[role\]' "$repo_root/packages/luci-app-pangolin/root/usr/share/rpcd/ucode/luci.pangolin"
+grep -q 'dns_configured_listener' "$repo_root/packages/luci-app-pangolin/root/usr/share/rpcd/ucode/luci.pangolin"
+grep -q 'DNSListenAddr' "$repo_root/packages/pangolin-cli/files/dependency-patches/030-client-dns-control.patch"
+grep -q 'PANGOLIN_CLI_CONFIG_DIR' "$repo_root/packages/pangolin-cli/patches/020-client-dns-control.patch"
 if grep -Rq '\\x00]' \
 	"$repo_root/packages/luci-app-newt/root/usr/share/rpcd/ucode" \
 	"$repo_root/packages/luci-app-pangolin/root/usr/share/rpcd/ucode"; then
@@ -148,6 +165,8 @@ if command -v shellcheck >/dev/null 2>&1; then
 		"$repo_root/packages/newt/files/configure-newt" \
 		"$repo_root/packages/newt/files/newt-service-action" \
 		"$repo_root/packages/pangolin-cli/files/pangolin.init" \
+		"$repo_root/packages/pangolin-cli/files/pangolin-client-run" \
+		"$repo_root/packages/pangolin-cli/files/pangolin-client-watch" \
 		"$repo_root/packages/pangolin-cli/files/configure-pangolin" \
 		"$repo_root/packages/pangolin-cli/files/pangolin-network" \
 		"$repo_root/packages/pangolin-cli/files/pangolin-service-action" \

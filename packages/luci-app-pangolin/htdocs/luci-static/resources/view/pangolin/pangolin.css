@@ -1,0 +1,79 @@
+.pangolin-service-card {
+	grid-column: 1 / -1;
+}
+
+.pangolin-auth-heading {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: .5rem;
+}
+
+.pangolin-auth-heading [role="status"] {
+	font-size: .85rem;
+	font-weight: normal;
+}
+
+.pangolin-auth-actions {
+	display: flex;
+	flex-wrap: nowrap;
+	align-items: stretch;
+	gap: .65rem;
+}
+
+.pangolin-auth-actions > button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 0;
+	margin: 0;
+	white-space: normal;
+	text-align: center;
+}
+
+.pangolin-service-card > h3 {
+	text-align: left;
+}
+
+.pangolin-service-actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	align-items: center;
+	gap: .65rem;
+}
+
+.pangolin-service-actions > button {
+	margin: 0;
+	text-align: center;
+}
+
+.pangolin-service-actions > .pangolin-autostart.is-disabled {
+	background: #fff !important;
+	color: #334155 !important;
+	border: 1px solid #cbd5e1 !important;
+}
+
+.pangolin-service-actions > .pangolin-autostart.is-enabled {
+	background: #008bb9 !important;
+	color: #fff !important;
+	border: 1px solid #008bb9 !important;
+}
+
+@media (max-width: 600px) {
+	.pangolin-service-actions {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		align-items: stretch;
+	}
+
+	.pangolin-service-actions > button {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 100%;
+		min-width: 0;
+		white-space: normal;
+	}
+}

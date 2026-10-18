@@ -1,10 +1,24 @@
 {
-	"admin/services/pangolin": {
+	"admin/vpn": {
+		"title": "VPN",
+		"order": 45,
+		"action": { "type": "firstchild" }
+	},
+	"admin/vpn/pangolin": {
 		"title": "Pangolin",
 		"order": 74,
 		"action": {
 			"type": "view",
 			"path": "pangolin/overview"
+		},
+		"depends": {
+			"acl": [ "luci-app-pangolin" ]
+		}
+	},
+	"admin/vpn/pangolin/auth": {
+		"action": {
+			"type": "view",
+			"path": "pangolin/authenticate"
 		},
 		"depends": {
 			"acl": [ "luci-app-pangolin" ]

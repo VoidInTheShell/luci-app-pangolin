@@ -22,19 +22,22 @@
 
 ## 手动发布正式版
 
-由用户选择通过开发验收的提交，例如首次发布：
+由用户指定通过验收的开发 Release tag，再合入主线并创建正式 tag。例如首次发布：
 
 ```sh
+git fetch origin --tags
+# 示例：替换为用户选定、已通过验收的开发 tag
+release_source=v1.1.0-dev.2.1
 git switch main
 git pull --ff-only origin main
-git merge --no-ff dev
+git merge --no-ff "$release_source"
 git push origin main
 # 等待 main 的检查和构建通过，再由用户确认：
 git tag -a v1.1.0 -m 'Pangolin 1.1.0'
 git push origin v1.1.0
 ```
 
-也可以按所需范围合入已验收的 dev 提交；正式 tag 必须指向已经包含在 origin/main 的提交。工作流会拒绝未合入主线的 tag、预发布 tag和不匹配 VERSION 的 tag。本次配置仅创建 dev 开发发布，不代用户合并 main 或发布正式版。
+合入的是用户指定 tag 对应的内容，不跟随 dev 后续提交；正式 tag 必须指向已经包含在 origin/main 的提交。工作流会拒绝未合入主线的 tag、预发布 tag和不匹配 VERSION 的 tag。本次配置仅创建 dev 开发发布，不代用户合并 main 或发布正式版。
 
 ## 安装资产与签名
 

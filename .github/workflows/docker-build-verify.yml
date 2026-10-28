@@ -1,5 +1,4 @@
 name: Docker Build Verification
-
 on:
   workflow_dispatch:
     inputs:
@@ -10,72 +9,131 @@ on:
         type: choice
         options:
           - full
-          - client-only
-  workflow_run:
-    workflows: ["Build and Release"]
-    types: [completed]
-    branches: [dev]
-
-permissions:
-  contents: read
-
-env:
-  SDK_NAME: openwrt-sdk-25.12.5-rockchip-armv8_gcc-14.3.0_musl.Linux-x86_64
-  SDK_ARCHIVE: openwrt-sdk-25.12.5-rockchip-armv8_gcc-14.3.0_musl.Linux-x86_64.tar.zst
-  BUILD_USER: builder
-  BUILD_HOME: /home/builder
+          - quick
 
 jobs:
   build:
-    name: Docker build verification
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
+    runs-on: ubuntu-24.04
+    env:
+      SDK_VERSION: 25.12.5
+      SDK_TARGET: rockchip-armv8
+      SDK_URL_BASE: https://downloads.openwrt.org/releases
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
-      - name: Restore SDK cache
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache OpenWrt SDK
         id: sdk-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
-          path: ${{ env.SDK_ARCHIVE }}
+          path: builder-sdk/openwrt-sdk-25.12.5-rockchip-armv8_linux-x86_64
           key: openwrt-sdk-25.12.5-rockchip-armv8-${{ hashFiles('scripts/build-openwrt.sh', 'scripts/build-openwrt-full.sh', 'scripts/release-tag.sh', 'openwrt-feeds.conf.default', 'packages/pangolin-cli/Makefile', 'packages/luci-app-pangolin/Makefile') }}
 
-      - name: Prepare SDK archive
+      - name: Download and prepare OpenWrt SDK
         if: steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
-          curl -fL --retry 5 --retry-all-errors -o "$SDK_ARCHIVE" \
-            "https://downloads.openwrt.org/releases/25.12.5/targets/rockchip/armv8/$SDK_ARCHIVE"
+          SDK_NAME="openwrt-sdk-${SDK_VERSION}-${SDK_TARGET}_linux-x86_64"
+          SDK_ARCHIVE="${SDK_NAME}.tar.xz"
+          SDK_URL="${SDK_URL_BASE}/${SDK_VERSION}/targets/rockchip/armv8/${SDK_ARCHIVE}"
 
-      - name: Build Docker image
-        run: |
-          docker build \
-            --build-arg OPENWRT_VERSION=25.12.5 \
-            -t pangolin-luci-builder .
+          mkdir -p builder-sdk
+          cd builder-sdk
 
-      - name: Determine build script
-        id: build_script
+          echo "Downloading ${SDK_URL}"
+          curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 -o "${SDK_ARCHIVE}" "${SDK_URL}"
+
+          echo "Extracting SDK..."
+          tar -xJf "${SDK_ARCHIVE}"
+          rm -f "${SDK_ARCHIVE}"
+
+          echo "SDK ready at builder-sdk/${SDK_NAME}"
+
+      - name: Verify SDK directory
         run: |
-          if [ "${{ github.event.inputs.build_type }}" = "client-only" ]; then
-            echo "script=./scripts/build-openwrt.sh" >> "$GITHUB_OUTPUT"
-          else
-            echo "script=./scripts/build-openwrt-full.sh" >> "$GITHUB_OUTPUT"
+          SDK_NAME="openwrt-sdk-${SDK_VERSION}-${SDK_TARGET}_linux-x86_64"
+          if [ ! -d "builder-sdk/${SDK_NAME}" ]; then
+            echo "SDK directory missing after download"
+            exit 1
           fi
+          ls -la "builder-sdk/${SDK_NAME}" | head -20
 
       - name: Build packages in Docker
         run: |
-          docker run \
-            -v "$PWD:/home/builder/src" \
-            -v "$PWD/builder-sdk/$SDK_NAME:/home/builder/sdk" \
-            pangolin-luci-builder \
-            -c "cd /home/builder/src && ${{ steps.build_script.outputs.script }}"
+          set -euo pipefail
+          SDK_NAME="openwrt-sdk-${SDK_VERSION}-${SDK_TARGET}_linux-x86_64"
+          SDK_PATH="$PWD/builder-sdk/${SDK_NAME}"
+          BUILD_MODE="${{ github.event.inputs.build_type }}"
 
-      - name: Verify build artifacts
+          docker run --rm \
+            -v "$PWD:/home/builder/src" \
+            -v "${SDK_PATH}:/home/builder/sdk" \
+            -e BUILD_MODE="${BUILD_MODE}" \
+            -w /home/builder/sdk \
+            openwrtorg/rootfs:x86_64 \
+            bash -lc '
+              set -euo pipefail
+
+              echo "=== Environment ==="
+              echo "Build mode: ${BUILD_MODE}"
+              echo "SDK path: $(pwd)"
+              echo "Source path: /home/builder/src"
+
+              echo "=== SDK check ==="
+              ls -la /home/builder/sdk | head -20
+
+              echo "=== Update feeds ==="
+              ./scripts/feeds update -a
+              ./scripts/feeds install -a
+
+              echo "=== Configure build ==="
+              cp /home/builder/src/openwrt-feeds.conf.default ./feeds.conf.default
+
+              cat > .config <<EOF
+CONFIG_TARGET_rockchip=y
+CONFIG_TARGET_rockchip_armv8=y
+CONFIG_TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-r3s=y
+CONFIG_PACKAGE_luci-app-pangolin=y
+CONFIG_PACKAGE_pangolin-cli=y
+EOF
+
+              make defconfig
+
+              echo "=== Build packages ==="
+              if [ "${BUILD_MODE}" = "quick" ]; then
+                echo "Quick build mode: luci-app-pangolin only"
+                make package/luci-app-pangolin/{clean,compile} V=s
+              else
+                echo "Full build mode: all packages"
+                make package/luci-app-pangolin/{clean,compile} V=s
+                make package/pangolin-cli/{clean,compile} V=s
+              fi
+
+              echo "=== Build results ==="
+              find /home/builder/sdk/bin -name "*.apk" -type f -exec ls -lh {} \;
+
+              echo "=== Verify output ==="
+              if [ -z "$(find /home/builder/sdk/bin -name "*.apk" -type f -print -quit)" ]; then
+                echo "ERROR: No APK files were generated"
+                exit 1
+              fi
+            '
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pangolin-packages-${{ github.event.inputs.build_type }}-${{ github.run_id }}
+          path: builder-sdk/openwrt-sdk-25.12.5-rockchip-armv8_linux-x86_64/bin/packages/
+          retention-days: 7
+
+      - name: Build summary
         run: |
-          if [ -z "$(ls -A bin/packages/aarch64_generic/pangolin/*.apk 2>/dev/null)" ]; then
-            echo "No APK files were generated"
-            exit 1
-          fi
-          echo "Built packages:"
-          ls -lh bin/packages/aarch64_generic/pangolin/*.apk
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: ${{ github.event.inputs.build_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SDK Version**: ${{ env.SDK_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target**: ${{ env.SDK_TARGET }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run ID**: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY

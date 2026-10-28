@@ -1,0 +1,81 @@
+name: Docker Build Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "Build type"
+        required: true
+        default: "full"
+        type: choice
+        options:
+          - full
+          - client-only
+  workflow_run:
+    workflows: ["Build and Release"]
+    types: [completed]
+    branches: [dev]
+
+permissions:
+  contents: read
+
+env:
+  SDK_NAME: openwrt-sdk-25.12.5-rockchip-armv8_gcc-14.3.0_musl.Linux-x86_64
+  SDK_ARCHIVE: openwrt-sdk-25.12.5-rockchip-armv8_gcc-14.3.0_musl.Linux-x86_64.tar.zst
+  BUILD_USER: builder
+  BUILD_HOME: /home/builder
+
+jobs:
+  build:
+    name: Docker build verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Restore SDK cache
+        id: sdk-cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.SDK_ARCHIVE }}
+          key: openwrt-sdk-25.12.5-rockchip-armv8-${{ hashFiles('scripts/build-openwrt.sh', 'scripts/build-openwrt-full.sh', 'scripts/release-tag.sh', 'openwrt-feeds.conf.default', 'packages/pangolin-cli/Makefile', 'packages/luci-app-pangolin/Makefile') }}
+
+      - name: Prepare SDK archive
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -fL --retry 5 --retry-all-errors -o "$SDK_ARCHIVE" \
+            "https://downloads.openwrt.org/releases/25.12.5/targets/rockchip/armv8/$SDK_ARCHIVE"
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg OPENWRT_VERSION=25.12.5 \
+            -t pangolin-luci-builder .
+
+      - name: Determine build script
+        id: build_script
+        run: |
+          if [ "${{ github.event.inputs.build_type }}" = "client-only" ]; then
+            echo "script=./scripts/build-openwrt.sh" >> "$GITHUB_OUTPUT"
+          else
+            echo "script=./scripts/build-openwrt-full.sh" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build packages in Docker
+        run: |
+          docker run \
+            -v "$PWD:/home/builder/src" \
+            -v "$PWD/builder-sdk/$SDK_NAME:/home/builder/sdk" \
+            pangolin-luci-builder \
+            -c "cd /home/builder/src && ${{ steps.build_script.outputs.script }}"
+
+      - name: Verify build artifacts
+        run: |
+          if [ -z "$(ls -A bin/packages/aarch64_generic/pangolin/*.apk 2>/dev/null)" ]; then
+            echo "No APK files were generated"
+            exit 1
+          fi
+          echo "Built packages:"
+          ls -lh bin/packages/aarch64_generic/pangolin/*.apk

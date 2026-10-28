@@ -227,6 +227,41 @@ without `/dev/net/tun`. For the legacy app, install `newt-1.18.1-r3` and
 `luci-app-newt-1.0.0-r4` together; those revisions include the same actionable
 RPC error handling.
 
+## Recover missing client integration ownership
+
+In **client** mode, `network.pangolin_client`, `firewall.pangolin_client`,
+`firewall.pangolin_client_lan`, and the optional Nikki bypass section are
+tracked in `/etc/pangolin/integration-backup.json`. Keep this root-only file
+with any backup of the generated UCI sections. Regular synchronization never
+takes over pre-existing, unowned sections.
+
+If the log reports `Refusing to replace existing network.pangolin_client`
+(or a corresponding firewall/Nikki section), first inspect the named sections
+and save a root-only backup of `/etc/config/network`, `/etc/config/firewall`,
+`/etc/config/nikki` if present, and `/etc/pangolin`. With the client running
+and no pending UCI edits, an administrator can explicitly recover ownership:
+
+```sh
+/usr/libexec/pangolin-client-integration recover
+/usr/libexec/pangolin-client-integration sync
+```
+
+Recovery adopts existing sections **only when their type, every option, and
+scalar/list types exactly match the currently requested client configuration**.
+It validates all candidates before adoption; extra options or changed policies
+are refused, not overwritten. A malformed ownership file is also refused. Do
+not delete that file or remove administrator policy to bypass the protection.
+After successful recovery, normal stop/rollback removes only unchanged owned
+sections. Ownership saves use a same-filesystem temporary file and atomic rename.
+
+The watcher logs the specific integration error once when it changes, keeps
+retrying every five seconds, and logs recovery after a later successful sync.
+Repeated identical errors no longer flood logd. A running `integration`
+instance alone does **not** mean the `client` instance is alive: check both
+instances and the client registration status. If `procd` has exhausted the
+configured restart limit after a network outage, restore connectivity first,
+then use `/etc/init.d/pangolin start` and check registration again.
+
 ## Migrate from the legacy Newt app
 
 1. Obtain the endpoint, site ID, and secret from a secure source; LuCI never

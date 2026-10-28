@@ -64,6 +64,9 @@ copy_file packages/pangolin-cli/files/pangolin.init /etc/init.d/pangolin
 copy_file packages/pangolin-cli/files/pangolin-network /usr/libexec/pangolin-network
 copy_file packages/pangolin-cli/files/pangolin-service-action /usr/libexec/pangolin-service-action
 copy_file packages/pangolin-cli/files/pangolin-site-run /usr/libexec/pangolin-site-run
+copy_file packages/pangolin-cli/files/pangolin-client-integration /usr/libexec/pangolin-client-integration
+copy_file packages/pangolin-cli/files/pangolin-client-integrate.uc /usr/libexec/pangolin-client-integrate.uc
+copy_file packages/pangolin-cli/files/pangolin-locked /usr/libexec/pangolin-locked
 
 copy_file packages/luci-app-newt/root/usr/share/rpcd/ucode/luci.newt \
 	/usr/share/rpcd/ucode/luci.newt
@@ -81,6 +84,9 @@ docker exec "$container_name" chmod 0755 \
 	/usr/libexec/pangolin-network \
 	/usr/libexec/pangolin-service-action \
 	/usr/libexec/pangolin-site-run \
+	/usr/libexec/pangolin-client-integration \
+	/usr/libexec/pangolin-client-integrate.uc \
+	/usr/libexec/pangolin-locked \
 	/usr/libexec/newt-run \
 	/usr/libexec/newt-service-action
 docker exec "$container_name" /etc/init.d/rpcd restart >/dev/null 2>&1
@@ -164,4 +170,12 @@ docker exec "$container_name" ubus call luci.pangolin get_logs '{"lines":20}' >/
 docker exec "$container_name" ubus call luci.newt get_status '{}' >/dev/null
 docker exec "$container_name" ubus call luci.newt get_logs '{"lines":20}' >/dev/null
 
-echo "Both RPC backends passed in stock OpenWrt ${openwrt_version} rpcd/ubus."
+copy_file tests/test_pangolin_client_integration.sh /usr/libexec/test-pangolin-client-integration
+docker exec -e PANGOLIN_DISPOSABLE_TEST=1 "$container_name" \
+	/bin/sh /usr/libexec/test-pangolin-client-integration
+
+copy_file tests/test_pangolin_auth_status.sh /usr/libexec/test-pangolin-auth-status
+docker exec -e PANGOLIN_DISPOSABLE_TEST=1 "$container_name" \
+	/bin/sh /usr/libexec/test-pangolin-auth-status
+
+echo "Both RPC backends, client integration and authentication status passed in stock OpenWrt ${openwrt_version} rpcd/ubus."

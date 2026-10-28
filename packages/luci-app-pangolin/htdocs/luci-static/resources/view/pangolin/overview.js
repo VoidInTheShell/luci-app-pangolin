@@ -304,7 +304,7 @@ function renderAuth(auth, installed) {
 			E('span', {}, [ _('设备配对码：'), E('code', { 'style': 'font-size:1.3rem;letter-spacing:.15em;user-select:all' }, auth.code) ]),
 			button(_('取消'), 'cancel')
 		]));
-	} else if (auth.state == 'error' || auth.state == 'expired') {
+	} else if (!auth.authenticated && (auth.state == 'error' || auth.state == 'expired')) {
 		children.push(E('p', { 'class': 'alert-message warning' }, auth.state == 'expired' ? _('配对码已过期，请重新认证。') : _('认证未完成，请检查服务器连接后重试。')));
 	}
 	return E('div', { 'class': 'cbi-section' }, children);

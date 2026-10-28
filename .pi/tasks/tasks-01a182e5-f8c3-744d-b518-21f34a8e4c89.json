@@ -1,0 +1,59 @@
+{
+  "nextId": 4,
+  "tasks": [
+    {
+      "id": "t1",
+      "content": "检查 uegov.org 的现有 WAF 和白名单配置",
+      "status": "completed",
+      "priority": "medium",
+      "activeForm": "正在检查现有 WAF 配置",
+      "metadata": {},
+      "blocks": [
+        "t2"
+      ],
+      "blockedBy": [],
+      "createdAt": 1793197517897,
+      "updatedAt": 1793198092701,
+      "startedAt": 1793198061371,
+      "description": "Inspected Free plan zone: 4 enabled host-scoped custom rules (geo CN/US block, exploit/method block, BIC/securityLevel compatibility skip, web managed challenge); no IP Access rules. Will add a host+IP-scoped skip rule before these existing rules, preserving their contents.",
+      "completedAt": 1793198092701
+    },
+    {
+      "id": "t2",
+      "content": "为 pw.uegov.org 添加指定 IP 的白名单",
+      "status": "completed",
+      "priority": "medium",
+      "activeForm": "正在更新站点白名单",
+      "metadata": {},
+      "blocks": [
+        "t3"
+      ],
+      "blockedBy": [
+        "t1"
+      ],
+      "createdAt": 1793197517897,
+      "updatedAt": 1793198156930,
+      "startedAt": 1793198114824,
+      "completedAt": 1793198156930,
+      "description": "Created enabled skip rule cdd8fb7e04414cbb8b7281bc92cf0b69 at position 1. Exact hostname+IP expression. Skips remaining custom rules and BIC/securityLevel for matching traffic. API dry-run and create succeeded; original 4 rules and order are byte-for-byte preserved in API response."
+    },
+    {
+      "id": "t3",
+      "content": "回读配置验证范围、顺序与启用状态",
+      "status": "completed",
+      "priority": "medium",
+      "activeForm": "正在验证白名单生效配置",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [
+        "t2"
+      ],
+      "createdAt": 1793197517897,
+      "updatedAt": 1793198181959,
+      "startedAt": 1793198156948,
+      "completedAt": 1793198181959,
+      "description": "Independent MCP GET verified all checks: exact hostname+IP match, enabled, first in ruleset, skip current custom rules and bic/securityLevel, logging enabled, original four IDs/order retained. Ruleset version 2. Configuration verified; no claim of an end-to-end request from the allowed source IP."
+    }
+  ],
+  "idempotency": []
+}

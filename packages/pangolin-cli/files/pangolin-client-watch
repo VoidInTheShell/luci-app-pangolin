@@ -5,8 +5,20 @@ umask 077
 mkdir -p /var/run/pangolin
 cleanup() { /usr/libexec/pangolin-dns restore; }
 trap 'cleanup; exit 0' INT TERM
+last_integration_error=''
 while :; do
-	/usr/libexec/pangolin-client-integration sync || logger -t pangolin 'Could not apply client firewall / Nikki integration'
+	if integration_error="$(/usr/libexec/pangolin-client-integration sync 2>&1)"; then
+		if [ -n "$last_integration_error" ]; then
+			logger -t pangolin 'Client firewall / Nikki integration recovered'
+		fi
+		last_integration_error=''
+	else
+		integration_error="${integration_error:-helper failed without a diagnostic}"
+		if [ "$integration_error" != "$last_integration_error" ]; then
+			logger -t pangolin -p daemon.err "Could not apply client firewall / Nikki integration: $integration_error"
+		fi
+		last_integration_error="$integration_error"
+	fi
 	connected=0
 	if curl -fsS --max-time 2 --unix-socket /var/run/olm.sock http://localhost/status > /var/run/pangolin/client-status.tmp 2>/dev/null; then
 		mv /var/run/pangolin/client-status.tmp /var/run/pangolin/client-status.json

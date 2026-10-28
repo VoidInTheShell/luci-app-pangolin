@@ -1,11 +1,11 @@
 #!/usr/bin/ucode
 'use strict';
-import { access, chmod, mkdir, popen, readfile, unlink, writefile } from 'fs';
+import { access, chmod, mkdir, popen, readfile, rename, unlink, writefile } from 'fs';
 import { cursor } from 'uci';
 
 const action = ARGV[0];
-if (index([ 'sync', 'stop-client', 'stop-auth', 'restore' ], action) < 0) {
-	warn('Usage: pangolin-client-integration {sync|stop-client|stop-auth|restore}\n');
+if (index([ 'sync', 'recover', 'stop-client', 'stop-auth', 'restore' ], action) < 0) {
+	warn('Usage: pangolin-client-integration {sync|recover|stop-client|stop-auth|restore}\n');
 	exit(2);
 }
 const uci = cursor();
@@ -85,11 +85,15 @@ function same(a, b) {
 }
 function saveState() {
 	mkdir('/etc/pangolin', 0700);
-	if (!writefile(backupFile, sprintf('%J', owned))) {
+	// The integration lock serializes writers. Rename on the same filesystem
+	// so an interrupted write cannot truncate the last valid ownership record.
+	let temporary = backupFile + '.tmp';
+	if (!writefile(temporary, sprintf('%J', owned)) ||
+	    !chmod(temporary, 0600) || !rename(temporary, backupFile)) {
+		unlink(temporary);
 		warn('Unable to save integration rollback state.\n');
 		exit(1);
 	}
-	chmod(backupFile, 0600);
 }
 const configs = [ 'network', 'firewall', 'nikki' ];
 for (let config in configs) {
@@ -97,6 +101,28 @@ for (let config in configs) {
 	if (length(uci.changes(config) ?? {})) {
 		warn(sprintf('Save pending %s changes before Pangolin integration.\n', config));
 		exit(1);
+	}
+}
+// Never adopt an unowned section during normal sync. Recovery is an explicit
+// administrator action, and only exact matches may be adopted. Validate every
+// candidate before saving anything, including scalar/list types and extra keys.
+if (action == 'recover') {
+	let recovered = [];
+	for (let item in wanted) {
+		let current = readSection(item);
+		if (!current) continue;
+		if (!same(current, item)) {
+			warn(sprintf('Refusing to recover mismatched %s.%s.\n', item.config, item.name));
+			exit(1);
+		}
+		let previous = null;
+		for (let entry in owned)
+			if (entry.config == item.config && entry.name == item.name) previous = entry;
+		if (!previous) push(recovered, item);
+	}
+	if (length(recovered)) {
+		for (let item in recovered) push(owned, item);
+		saveState();
 	}
 }
 let remaining = [];

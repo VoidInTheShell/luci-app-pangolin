@@ -1,0 +1,357 @@
+#!/usr/bin/env ucode
+
+'use strict';
+
+// rpcd executes this file as the privileged server-side boundary for LuCI.
+
+import { access, chmod, popen, readfile } from 'fs';
+import { connect } from 'ubus';
+import { cursor } from 'uci';
+
+const service = 'pangolin';
+const section = 'main';
+const healthFile = '/var/run/pangolin/site-healthy';
+const startedFile = '/var/run/pangolin/site-started';
+const ubus = connect();
+
+const stringFields = [
+	'endpoint', 'auth_mode', 'id', 'name', 'log_level', 'dns', 'mtu', 'port',
+	'interface', 'interface_main', 'prefer_endpoint', 'ping_interval',
+	'ping_timeout', 'udp_proxy_idle_timeout', 'updown_script', 'blueprint_file',
+	'provisioning_blueprint_file', 'docker_socket', 'tls_client_cert',
+	'tls_client_key', 'tls_private_key', 'auth_daemon_principals_file',
+	'auth_daemon_ca_cert_path', 'admin_addr', 'region', 'respawn_threshold',
+	'respawn_timeout', 'respawn_retry'
+];
+
+const boolFields = [
+	'enabled', 'native', 'native_main', 'no_cloud', 'disable_clients',
+	'disable_ssh', 'enforce_hc_cert', 'docker_enforce_network_validation',
+	'auth_daemon_generate_random_password', 'metrics', 'otlp',
+	'metrics_async_bytes', 'pprof', 'manage_network', 'stdout', 'stderr'
+];
+
+const listFields = [ 'local_endpoint_interfaces', 'tls_client_ca' ];
+const secretFields = [ 'secret', 'provisioning_key', 'auth_daemon_key' ];
+
+function isBool(value) {
+	return value === true || value === false || value === '1' || value === '0';
+}
+
+function boolString(value) {
+	return (value === true || value === '1') ? '1' : '0';
+}
+
+function boundedString(value, max) {
+	// ucode's regexp engine does not support a \x00 escape in a character
+	// class. Keep the NUL check separate so validation is executable on the
+	// same ucode runtime rpcd uses, rather than merely bytecode-compilable.
+	return type(value) == 'string' && length(value) <= max &&
+		!match(value, /[\r\n]/) && index(value, "\x00") < 0;
+}
+
+function validPath(value) {
+	return value == '' || (match(value, /^\//) && !match(value, /(^|\/)\.\.(\/|$)/));
+}
+
+function validate(config) {
+	if (type(config) != 'object')
+		return 'Configuration must be an object.';
+
+	for (let key in config) {
+		if (index(stringFields, key) >= 0 || index(secretFields, key) >= 0) {
+			if (!boundedString(config[key], key == 'secret' || key == 'provisioning_key' || key == 'auth_daemon_key' ? 4096 : 1024))
+				return `Invalid value for ${key}.`;
+		} else if (index(boolFields, key) >= 0 || match(key, /^clear_(secret|provisioning_key|auth_daemon_key)$/)) {
+			if (!isBool(config[key]))
+				return `Invalid boolean value for ${key}.`;
+		} else if (index(listFields, key) >= 0) {
+			if (type(config[key]) != 'array' || length(config[key]) > 32)
+				return `Invalid list value for ${key}.`;
+			for (let value in config[key])
+				if (!boundedString(value, 1024))
+					return `Invalid list entry for ${key}.`;
+		} else {
+			return `Unknown configuration field: ${key}.`;
+		}
+	}
+
+	for (let key in [ 'interface', 'interface_main' ])
+		if (config[key] != null && !match(config[key], /^[A-Za-z0-9_.:-]{1,15}$/))
+			return `${key} must be a valid Linux interface name of at most 15 characters.`;
+
+	if (config.local_endpoint_interfaces != null)
+		for (let value in config.local_endpoint_interfaces)
+			if (!match(value, /^[A-Za-z0-9_.:-]+$/))
+				return 'Local endpoint interfaces may contain only letters, numbers, dot, underscore, colon, and hyphen.';
+
+	if (config.tls_client_ca != null)
+		for (let value in config.tls_client_ca)
+			if (!validPath(value))
+				return "CA certificate paths must be absolute and may not contain '..' components.";
+
+	if (config.endpoint != null && !match(config.endpoint, /^https:\/\/[^\s]+$/))
+		return 'Pangolin endpoint must be an HTTPS URL.';
+
+	if (config.auth_mode != null && config.auth_mode != 'credentials' && config.auth_mode != 'provisioning')
+		return 'Authentication mode must be credentials or provisioning.';
+
+	if (config.log_level != null && index([ 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL' ], config.log_level) < 0)
+		return 'Invalid log level.';
+
+	for (let key in [ 'updown_script', 'blueprint_file', 'provisioning_blueprint_file',
+	                  'docker_socket', 'tls_client_cert', 'tls_client_key',
+	                  'tls_private_key', 'auth_daemon_principals_file',
+	                  'auth_daemon_ca_cert_path' ])
+		if (config[key] != null && !validPath(config[key]) && key != 'docker_socket')
+			return `${key} must be an absolute path without '..' components.`;
+
+	for (let key in [ 'ping_interval', 'ping_timeout', 'udp_proxy_idle_timeout' ])
+		if (config[key] != null && !match(config[key], /^[1-9][0-9]*(ms|s|m|h)$/))
+			return `${key} must be a positive duration such as 500ms, 15s, or 2m.`;
+
+	if (config.mtu != null && (int(config.mtu) < 576 || int(config.mtu) > 9000))
+		return 'MTU must be between 576 and 9000.';
+
+	if (config.port != null && config.port != '' && (int(config.port) < 1 || int(config.port) > 65535))
+		return 'Port must be between 1 and 65535.';
+
+	for (let key in [ 'respawn_threshold', 'respawn_timeout', 'respawn_retry' ])
+		if (config[key] != null && !match(config[key], /^[0-9]+$/))
+			return `${key} must be a non-negative integer.`;
+
+	return null;
+}
+
+function readConfig() {
+	const uci = cursor();
+	uci.load(service);
+	let result = {};
+
+	for (let key in stringFields)
+		result[key] = uci.get(service, section, key) ?? '';
+	for (let key in boolFields)
+		result[key] = uci.get(service, section, key) ?? '0';
+	for (let key in listFields) {
+		let value = uci.get(service, section, key) ?? [];
+		result[key] = type(value) == 'array' ? value : (value == '' ? [] : [ value ]);
+	}
+	for (let key in secretFields)
+		result['has_' + key] = length(uci.get(service, section, key) ?? '') > 0;
+
+	uci.unload(service);
+	return result;
+}
+
+function redact(text) {
+	const uci = cursor();
+	uci.load(service);
+	for (let key in secretFields) {
+		let secret = uci.get(service, section, key);
+		if (secret && length(secret) >= 4)
+			text = replace(text, secret, '[redacted]');
+	}
+	uci.unload(service);
+	return text;
+}
+
+function readCommand(command) {
+	let output = '';
+	let handle = popen(command, 'r');
+	if (!handle)
+		return { code: -1, output: '' };
+	for (let line = handle.read('line'); length(line); line = handle.read('line'))
+		output += line;
+	return { code: handle.close(), output: trim(output) };
+}
+
+function runService(action) {
+	let result = readCommand(`/usr/libexec/pangolin-service-action ${action}`);
+	result.output = redact(result.output);
+	return result;
+}
+
+function syncNetwork() {
+	let result = readCommand('/usr/libexec/pangolin-network sync');
+	result.output = redact(result.output);
+	return result;
+}
+
+function serviceInfo() {
+	let info = ubus.call('service', 'list', { name: service }) ?? {};
+	let instance = info?.[service]?.instances?.site ?? {};
+	return {
+		running: instance.running === true,
+		pid: instance.pid ?? null
+	};
+}
+
+function networkInfo(interfaceName) {
+	const uci = cursor();
+	uci.load('network');
+	let networkRegistered = uci.get('network', 'pangolin') == 'interface' &&
+		uci.get('network', 'pangolin', 'proto') == 'none' &&
+		uci.get('network', 'pangolin', 'device') == interfaceName;
+	uci.unload('network');
+
+	uci.load('firewall');
+	let firewallRegistered = uci.get('firewall', 'pangolin') == 'zone' &&
+		uci.get('firewall', 'pangolin', 'name') == 'pangolin' &&
+		uci.get('firewall', 'pangolin', 'network') == 'pangolin';
+	uci.unload('firewall');
+
+	let sysfs = `/sys/class/net/${interfaceName}`;
+	return {
+		network_registered: networkRegistered,
+		firewall_registered: firewallRegistered,
+		device_present: access(sysfs),
+		operstate: trim(readfile(`${sysfs}/operstate`) ?? ''),
+		device_mtu: trim(readfile(`${sysfs}/mtu`) ?? ''),
+		rx_bytes: trim(readfile(`${sysfs}/statistics/rx_bytes`) ?? '0'),
+		tx_bytes: trim(readfile(`${sysfs}/statistics/tx_bytes`) ?? '0')
+	};
+}
+
+const methods = {
+	get_config: {
+		call: function() {
+			return readConfig();
+		}
+	},
+
+	set_config: {
+		args: { config: {} },
+		call: function(request) {
+			let config = request.args?.config;
+			let error = validate(config);
+			if (error)
+				return { success: false, error: error };
+
+			const uci = cursor();
+			uci.load(service);
+			if (uci.get(service, section) == null)
+				uci.set(service, section, 'pangolin');
+
+			for (let key in stringFields)
+				if (config[key] != null)
+					uci.set(service, section, key, config[key]);
+			for (let key in boolFields)
+				if (config[key] != null)
+					uci.set(service, section, key, boolString(config[key]));
+			for (let key in listFields)
+				if (config[key] != null) {
+					// ucode-mod-uci deliberately rejects an empty array. Treat it
+					// as removal of the UCI list, which is also how readConfig()
+					// represents an absent list option.
+					if (length(config[key]) > 0)
+						uci.set(service, section, key, config[key]);
+					else if (uci.get(service, section, key) != null)
+						uci.delete(service, section, key);
+				}
+
+			for (let key in secretFields) {
+				if (isBool(config['clear_' + key]) && boolString(config['clear_' + key]) == '1')
+					uci.delete(service, section, key);
+				else if (config[key] != null && config[key] != '')
+					uci.set(service, section, key, config[key]);
+			}
+
+			uci.save(service);
+			uci.commit(service);
+			uci.unload(service);
+			chmod('/etc/config/pangolin', 0600);
+
+			let network = syncNetwork();
+			if (network.code != 0)
+				return { success: false, error: `Configuration saved, but OpenWrt network integration failed${network.output ? ': ' + network.output : '.'}` };
+
+			let action = (config.enabled == null ? readConfig().enabled == '1' : boolString(config.enabled) == '1')
+				? 'restart'
+				: 'stop';
+			let result = runService(action);
+			return result.code == 0
+				? { success: true }
+				: {
+					success: false,
+					error: `Configuration saved, but the service ${action} failed${result.output ? ': ' + result.output : '.'}`
+				};
+		}
+	},
+
+	get_status: {
+		call: function() {
+			let svc = serviceInfo();
+			let cfg = readConfig();
+			let installed = access('/usr/bin/pangolin');
+			let version = installed ? trim(readfile('/usr/share/pangolin/version') ?? '') : '';
+			let newtVersion = installed ? trim(readfile('/usr/share/pangolin/newt-version') ?? '') : '';
+			let interfaceName = cfg.interface_main || 'pangolin';
+			let network = networkInfo(interfaceName);
+			let started = int(readfile(startedFile) ?? 0);
+			let connected = svc.running && access(healthFile);
+			return {
+				installed: installed,
+				running: svc.running,
+				connected: connected,
+				pid: svc.pid,
+				started: started || null,
+				uptime: started > 0 && time() > started ? time() - started : 0,
+				configured: cfg.auth_mode == 'provisioning'
+					? cfg.has_provisioning_key && length(cfg.name) > 0
+					: cfg.has_secret && length(cfg.id) > 0,
+				enabled: cfg.enabled == '1',
+				startup_enabled: runService('enabled').code == 0,
+				version: version,
+				newt_version: newtVersion,
+				endpoint: cfg.endpoint,
+				metrics_enabled: cfg.metrics == '1',
+				admin_addr: cfg.admin_addr,
+				native_main: cfg.native_main == '1',
+				interface: interfaceName,
+				device_present: network.device_present,
+				operstate: network.operstate,
+				device_mtu: network.device_mtu,
+				rx_bytes: network.rx_bytes,
+				tx_bytes: network.tx_bytes,
+				network_registered: network.network_registered,
+				firewall_registered: network.firewall_registered
+			};
+		}
+	},
+
+	get_logs: {
+		args: { lines: 100 },
+		call: function(request) {
+			let lines = int(request.args?.lines ?? 100);
+			lines = lines < 10 ? 10 : (lines > 500 ? 500 : lines);
+			let result = readCommand(`logread -e pangolin -l ${lines} 2>/dev/null`);
+			return { logs: redact(result.output), lines: lines };
+		}
+	},
+
+	sync_network: {
+		call: function() {
+			let result = syncNetwork();
+			return result.code == 0
+				? { success: true }
+				: { success: false, error: `Network synchronization failed${result.output ? ': ' + result.output : '.'}` };
+		}
+	},
+
+	service_action: {
+		args: { action: 'restart' },
+		call: function(request) {
+			let action = request.args?.action;
+			if (index([ 'start', 'stop', 'restart', 'enable', 'disable' ], action) < 0)
+				return { success: false, error: 'Unsupported service action.' };
+			if ((action == 'start' || action == 'restart') && readConfig().enabled != '1')
+				return { success: false, error: 'Enable the Pangolin site in the configuration and save before starting it.' };
+			let result = runService(action);
+			return result.code == 0
+				? { success: true }
+				: { success: false, error: `Service action '${action}' failed${result.output ? ': ' + result.output : '.'}` };
+		}
+	}
+};
+
+return { 'luci.pangolin': methods };

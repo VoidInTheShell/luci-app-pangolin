@@ -190,6 +190,11 @@ function authInfo() {
 			state = 'error';
 	}
 	if (state == 'pending' && int(raw.ExpiresAt) <= time()) state = 'expired';
+	// A completed pairing's saved credentials outlive its transient status file.
+	// Do not present an old failure/expiry as an unauthenticated device. A live
+	// reauthentication attempt still keeps its starting/pending presentation.
+	if (authenticated && state != 'starting' && state != 'pending')
+		state = 'authenticated';
 	let url = raw.URL ?? '';
 	if (index(url, replace(cfg.endpoint, /\/+$/, '') + '/auth/login/device?code=') != 0) url = '';
 	return {
@@ -197,7 +202,7 @@ function authInfo() {
 		code: state == 'pending' ? raw.Code ?? '' : '',
 		url: state == 'pending' ? url : '',
 		expires_at: state == 'pending' ? raw.ExpiresAt : 0,
-		error: raw.Error ? '认证未完成，请重试。' : '',
+		error: state == 'error' && raw.Error ? '认证未完成，请重试。' : '',
 		organizations: raw.Organizations ?? [],
 		selected_org: account.orgId ?? ''
 	};

@@ -5,6 +5,18 @@ import vm from 'node:vm';
 // Execute the real LuCI view helpers with only their rendering/RPC boundaries
 // stubbed. No device settings, service actions or authentication calls are made.
 const source = fs.readFileSync(new URL('../packages/luci-app-pangolin/htdocs/luci-static/resources/view/pangolin/overview.js', import.meta.url), 'utf8');
+const css = fs.readFileSync(new URL('../packages/luci-app-pangolin/htdocs/luci-static/resources/view/pangolin/pangolin.css', import.meta.url), 'utf8');
+function cssRule(selector) {
+	const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const match = css.match(new RegExp(escaped + '\\s*\\{([^}]+)\\}'));
+	assert.ok(match, 'Missing CSS rule: ' + selector);
+	return match[1];
+}
+for (const selector of ['.pangolin-auth-heading', '.pangolin-auth-actions', '.pangolin-service-actions'])
+	assert.match(cssRule(selector), /justify-content:\s*center\s*;/, selector);
+assert.match(cssRule('.pangolin-auth-heading'), /text-align:\s*center\s*;/);
+assert.match(cssRule('.pangolin-service-card > h3'), /text-align:\s*center\s*;/);
+assert.match(cssRule('.pangolin-auth-actions'), /flex-wrap:\s*wrap\s*;/);
 const helpers = source.slice(0, source.indexOf('return view.extend({'));
 const context = vm.createContext({
 	URL,
@@ -52,6 +64,20 @@ assert.equal(JSON.stringify(authCard).includes('可用组织：'), false);
 const actionRow = authCard.children.find(node => node?.attrs?.class === 'pangolin-auth-actions');
 assert.deepEqual(buttons(actionRow).map(node => node.children), ['重新认证', '退出认证并停止服务']);
 
+// An old pairing attempt must not leave a warning on an authenticated card,
+// even while talking to an older RPC backend which returns a stale state.
+for (const state of ['error', 'expired']) {
+	const authenticatedCard = JSON.stringify(renderAuth({ ...auth, state }, true));
+	assert.equal(authenticationPresentation({ ...auth, state }).text, '已认证');
+	assert.equal(authenticatedCard.includes('alert-message warning'), false, state);
+	assert.equal(authenticatedCard.includes('设备已认证。'), true, state);
+	const unauthenticatedCard = JSON.stringify(renderAuth({ state }, true));
+	assert.equal(unauthenticatedCard.includes('alert-message warning'), true, state);
+}
+const reauth = { ...auth, state: 'pending', url: 'https://example.test/auth/login/device?code=EXAMPLE', code: 'EXAMPLE' };
+assert.equal(authenticationPresentation(reauth).text, '等待网页认证');
+assert.equal(JSON.stringify(renderAuth(reauth, true)).includes('打开链接认证'), true);
+
 // The originating tab must not use RPC or timers after opening the foreground
 // authentication page: browsers can suspend or throttle the hidden tab.
 let opened;
@@ -93,4 +119,4 @@ const completedCalls = calls.length;
 await foregroundPoll();
 assert.equal(calls.length, completedCalls);
 
-console.log('HTTPS endpoints, controls, organization summary and independent foreground pairing passed.');
+console.log('Centered cards, authenticated warning recovery, HTTPS endpoints, controls, organization summary and independent foreground pairing passed.');

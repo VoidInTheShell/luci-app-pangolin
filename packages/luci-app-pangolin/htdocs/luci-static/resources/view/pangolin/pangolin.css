@@ -6,8 +6,9 @@
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	justify-content: space-between;
+	justify-content: center;
 	gap: .5rem;
+	text-align: center;
 }
 
 .pangolin-auth-heading [role="status"] {
@@ -17,8 +18,9 @@
 
 .pangolin-auth-actions {
 	display: flex;
-	flex-wrap: nowrap;
+	flex-wrap: wrap;
 	align-items: stretch;
+	justify-content: center;
 	gap: .65rem;
 }
 
@@ -33,7 +35,7 @@
 }
 
 .pangolin-service-card > h3 {
-	text-align: left;
+	text-align: center;
 }
 
 .pangolin-service-actions {

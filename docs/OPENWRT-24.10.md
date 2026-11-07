@@ -52,5 +52,24 @@ Keep the router's own firmware feeds enabled for runtime dependencies,
 especially the kernel-matched `kmod-tun`. The client IPKs do not contain
 kernel modules, device credentials or saved user configuration.
 
-Open **VPN → Pangolin**, authenticate the device, enable the service, then
-save and apply. Installation leaves the VPN disabled by default.
+Both IPKs declare their runtime dependencies. The release bundle contains the
+client core and LuCI interface; it does not bundle every system dependency.
+With working firmware feeds, `opkg update` followed by the install command above
+resolves and installs missing dependencies automatically. Offline installation
+also requires local copies of every missing dependency.
+
+| Package | Runtime dependencies declared by the IPK |
+| --- | --- |
+| `pangolin-cli` | `libc`, `ca-bundle`, `curl`, `jshn`, `kmod-tun`, `ucode`, `ucode-mod-fs`, `ucode-mod-uci` |
+| `luci-app-pangolin` | `libc`, `luci-base`, `rpcd-mod-ucode`, `ucode-mod-fs`, `ucode-mod-uci`, `ucode-mod-ubus` |
+
+Install both packages for a complete client. `luci-app-pangolin` intentionally
+does not depend on `pangolin-cli`, so installing only the LuCI IPK does not
+automatically install the client core. The core includes `/usr/bin/pangolin`
+with its Newt and OLM Go modules compiled in. Client and Subnet Router use do
+not require the separate `newt` or `luci-app-newt` packages.
+
+Open **VPN → Pangolin**, save the server address, then authenticate the device.
+Successful authentication automatically enables and starts the service, including
+reauthentication and authentication after logout. Installation itself leaves the
+VPN disabled by default; boot autostart is a separate setting.

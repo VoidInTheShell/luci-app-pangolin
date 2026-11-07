@@ -6,6 +6,7 @@ uci set pangolin.main.endpoint=https://example.test
 uci commit pangolin
 umask 077
 mkdir -p /etc/pangolin/client /var/run/pangolin-auth
+printf '%s\n' test-attempt > /var/run/pangolin-auth/attempt
 cat > /etc/pangolin/client/accounts.json <<'EOF'
 {"activeUserId":"test","accounts":{"test":{"host":"https://example.test","sessionToken":"test-session","olmCredentials":{"secret":"test-secret"},"orgId":"test-org"}}}
 EOF
@@ -19,6 +20,8 @@ check() {
 for state in error expired idle; do
 	printf '{"State":"%s","Error":"old failure"}\n' "$state" > /var/run/pangolin-auth/status.json
 	check true authenticated
+	[ "$(printf '%s' "$result" | jsonfilter -e '@.pairing_state')" = "$state" ]
+	[ "$(printf '%s' "$result" | jsonfilter -e '@.attempt')" = test-attempt ]
 	[ "$(printf '%s' "$result" | jsonfilter -e '@.error')" = '' ]
 done
 # No live login worker: stale starting/pending states must also resolve to the
@@ -53,6 +56,6 @@ uci set pangolin.main.endpoint=https://example.test
 uci commit pangolin
 rm /etc/pangolin/client/accounts.json
 check false error
-rm /var/run/pangolin-auth/status.json
+rm /var/run/pangolin-auth/status.json /var/run/pangolin-auth/attempt
 
 echo 'Pangolin authenticated/stale pairing status regressions passed.'

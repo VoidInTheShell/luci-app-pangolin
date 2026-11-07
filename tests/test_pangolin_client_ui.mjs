@@ -26,8 +26,8 @@ const context = vm.createContext({
 	ui: { createHandlerFn: (scope, fn) => fn },
 	E: (tag, attrs, children) => ({ tag, attrs: attrs || {}, children })
 });
-vm.runInContext(helpers + '\nthis.helpers = { validateEndpoint, renderControls, authenticationPresentation, authenticationHint, authRenderKey, authenticationSummary, renderAuth, beginAuthentication, showNotification };', context);
-const { validateEndpoint, renderControls, authenticationPresentation, authenticationHint, authRenderKey, authenticationSummary, renderAuth, beginAuthentication, showNotification } = context.helpers;
+vm.runInContext(helpers + '\nthis.helpers = { validateEndpoint, renderControls, authenticationPresentation, authenticationHint, authRenderKey, authenticationSummary, renderAuth, beginAuthentication, closeAuthenticationWindow, syncServiceEnabled, showNotification };', context);
+const { validateEndpoint, renderControls, authenticationPresentation, authenticationHint, authRenderKey, authenticationSummary, renderAuth, beginAuthentication, closeAuthenticationWindow, syncServiceEnabled, showNotification } = context.helpers;
 for (const value of ['https://pangolin.suanlemei.cloud/', 'https://server.example:8443/', 'https://192.0.2.1/', 'https://[2001:db8::1]:8443/'])
 	assert.equal(validateEndpoint('test', value), true, value);
 for (const value of ['http://server.example', 'https://', 'server.example', 'https://user:password@server.example'])
@@ -79,15 +79,20 @@ assert.equal(authenticationPresentation(reauth).text, '等待网页认证');
 assert.equal(JSON.stringify(renderAuth(reauth, { installed: true })).includes('打开链接认证'), true);
 
 for (const [status, expected] of [
-	[{ installed: true }, '勾选'],
+	[{ installed: true }, '自动启用并启动服务'],
 	[{ installed: true, enabled: true }, '未运行'],
 	[{ installed: true, enabled: true, running: true }, '正在连接'],
 	[{ installed: true, enabled: true, running: true, connected: true }, '服务已连接']
 ]) {
 	assert.ok(authenticationHint(auth, status).includes(expected));
-	if (status.enabled) assert.ok(!authenticationHint(auth, status).includes('保存并应用'));
+	assert.ok(!authenticationHint(auth, status).includes('保存并应用'));
 }
 assert.ok(authenticationHint(reauth, {installed:true}).includes('重新认证'));
+for (const pairing_state of ['error', 'expired']) {
+	const failedReauth = { ...auth, state: 'authenticated', attempt: 'current', pairing_state };
+	assert.equal(authenticationPresentation(failedReauth).text, '原认证有效，本次配对未完成');
+	assert.ok(authenticationHint(failedReauth, {installed:true, running:true}).includes('当前连接未更新'));
+}
 assert.ok(authenticationHint({}, {installed:true}).includes('未认证'));
 assert.notEqual(authRenderKey(auth, {installed:true}), authRenderKey(auth, {installed:true, running:true}));
 assert.ok(authCard.children[0].children.some(node => node.children === '|'));
@@ -105,12 +110,56 @@ assert.equal(removed, true);
 // The originating tab must not use RPC or timers after opening the foreground
 // authentication page: browsers can suspend or throttle the hidden tab.
 let opened;
+let closed = 0;
+let popup;
 context.window = {
-	open: url => { opened = url; return {}; },
+	open: url => { opened = url; popup = { closed: false, close: () => { closed++; popup.closed = true; } }; return popup; },
 	setTimeout: () => { throw new Error('Background timer must not run'); }
 };
 beginAuthentication(true);
 assert.equal(opened, '/cgi-bin/luci/admin/vpn/pangolin/auth');
+// Pairing on another device still closes the tracked popup. A prior success or
+// old credentials during a failed/cancelled reauthentication must not close it.
+const completedAuth = { ...auth, pairing_state: 'authenticated', attempt: 'old' };
+beginAuthentication(true, completedAuth);
+closeAuthenticationWindow(completedAuth);
+assert.equal(closed, 0);
+for (const pairing_state of ['starting', 'pending', 'error', 'expired', 'idle'])
+	closeAuthenticationWindow({ ...completedAuth, attempt: 'new', pairing_state });
+closeAuthenticationWindow({ ...completedAuth, authenticated: false, attempt: 'new' });
+assert.equal(closed, 0);
+closeAuthenticationWindow({ ...completedAuth, attempt: 'new' });
+assert.equal(closed, 1);
+closeAuthenticationWindow({ ...completedAuth, attempt: 'new' });
+assert.equal(closed, 1);
+beginAuthentication(true, completedAuth);
+popup.closed = true;
+closeAuthenticationWindow({ ...completedAuth, attempt: 'new' });
+assert.equal(closed, 1, 'A manually closed popup must not be closed again');
+context.ui.addNotification = () => ({ querySelector: () => null });
+context.window.open = () => null;
+beginAuthentication(true, completedAuth);
+closeAuthenticationWindow({ ...completedAuth, attempt: 'new' });
+assert.equal(closed, 1, 'A blocked popup must not prevent successful pairing');
+
+// The backend can enable the service while this tab is inactive. Reflect that
+// change in both the form and saved data, preserving explicit unsaved edits.
+let enabledInput = '0';
+const map = { lookupOption: () => [{
+	formvalue: () => enabledInput,
+	getUIElement: () => ({ setValue: value => { enabledInput = value; } })
+}] };
+vm.runInContext('mapData = { pangolin: { enabled: "0" } };', context);
+syncServiceEnabled(map, { enabled: true });
+assert.equal(enabledInput, '1');
+assert.equal(vm.runInContext('serializeConfig().enabled', context), '1');
+enabledInput = '0';
+syncServiceEnabled(map, { enabled: true });
+assert.equal(enabledInput, '0', 'Keep an unsaved user edit');
+syncServiceEnabled(map, { enabled: false });
+enabledInput = '1';
+syncServiceEnabled(map, { enabled: false });
+assert.equal(enabledInput, '1');
 
 const foregroundSource = fs.readFileSync(new URL('../packages/luci-app-pangolin/htdocs/luci-static/resources/view/pangolin/authenticate.js', import.meta.url), 'utf8');
 const calls = [];
@@ -143,4 +192,4 @@ const completedCalls = calls.length;
 await foregroundPoll();
 assert.equal(calls.length, completedCalls);
 
-console.log('Centered cards, authenticated warning recovery, HTTPS endpoints, controls, organization summary and independent foreground pairing passed.');
+console.log('Pangolin UI: cards, auth status, popup lifecycle, enabled-state sync and independent foreground pairing passed.');

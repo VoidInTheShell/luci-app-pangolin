@@ -13,6 +13,7 @@ start_service() {
 	chmod 0700 /var/run/pangolin-auth /etc/pangolin /etc/pangolin/client
 	rm -f /var/run/pangolin-auth/status.json
 	printf '%s\n' '{"State":"starting"}' > /var/run/pangolin-auth/status.json
+	printf '%s-%s\n' "$(date +%s)" "$$" > /var/run/pangolin-auth/attempt
 	touch /var/run/pangolin-auth/active
 	procd_open_instance login
 	procd_set_param command /usr/libexec/pangolin-auth-run
@@ -23,5 +24,5 @@ start_service() {
 stop_service() {
 	rm -f /var/run/pangolin-auth/active
 	/usr/libexec/pangolin-client-integration stop-auth || true
-	rm -f /var/run/pangolin-auth/status.json
+	rm -f /var/run/pangolin-auth/status.json /var/run/pangolin-auth/attempt
 }

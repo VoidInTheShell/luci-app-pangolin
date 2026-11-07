@@ -178,4 +178,11 @@ copy_file tests/test_pangolin_auth_status.sh /usr/libexec/test-pangolin-auth-sta
 docker exec -e PANGOLIN_DISPOSABLE_TEST=1 "$container_name" \
 	/bin/sh /usr/libexec/test-pangolin-auth-status
 
+copy_file packages/pangolin-cli/files/pangolin-auth-run /usr/libexec/pangolin-auth-run
+copy_file packages/luci-app-pangolin/root/usr/libexec/pangolin-auth-action /usr/libexec/pangolin-auth-action
+copy_file tests/test_pangolin_auth_lifecycle.sh /usr/libexec/test-pangolin-auth-lifecycle
+docker exec "$container_name" chmod 0755 /usr/libexec/pangolin-auth-run /usr/libexec/pangolin-auth-action
+docker exec -e PANGOLIN_DISPOSABLE_TEST=1 "$container_name" \
+	/bin/sh /usr/libexec/test-pangolin-auth-lifecycle
+
 echo "Both RPC backends, client integration and authentication status passed in stock OpenWrt ${openwrt_version} rpcd/ubus."

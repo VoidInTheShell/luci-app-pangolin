@@ -8,6 +8,8 @@
 
 OpenWrt 24.10 使用 opkg，请按 [24.10 IPK 安装说明](docs/OPENWRT-24.10.md) 验证签名并安装对应架构的软件包。下面的 APK 命令适用于 25.12。
 
+完整客户端需安装 `pangolin-cli` 和 `luci-app-pangolin` 两个包。系统依赖由包管理器从当前固件的软件源补齐；无需额外安装独立的 Newt 或 OLM。
+
 从本仓库 [Releases](https://github.com/VoidInTheShell/luci-app-pangolin/releases) 下载与设备 `apk --print-arch` 一致的压缩包。开发版标记为 Pre-release；正式版由维护者手动打 tag 后发布。检查 Release 的 `SHA256SUMS`，解压后将文件复制到设备 `/tmp/pangolin-release`，执行：
 
 ```sh
@@ -20,12 +22,12 @@ apk add ./pangolin-cli-*.apk ./luci-app-pangolin-*.apk
 
 签名公钥同时位于 [keys/pangolin-public-key.pem](keys/pangolin-public-key.pem)。首次信任前应核对公钥与发布页校验值。包内不包含设备配置、账户或密钥，安装不会自动启动 VPN。
 
-打开 **LuCI → VPN → Pangolin**，填写 HTTPS 服务器地址，点击认证，使用认证窗口显示的配对码完成登录。设备已认证后，勾选“启用 Pangolin 服务”，点击“保存并应用”。“保存”只保存配置；开机自启是独立状态按钮。
+打开 **LuCI → VPN → Pangolin**，填写并保存 HTTPS 服务器地址，点击认证，使用认证窗口显示的配对码完成登录。设备认证成功后自动启用并启动服务，无需再次“保存并应用”；重新认证、退出认证并停止服务后再次认证也一样。“保存”只保存配置；开机自启是独立状态按钮。
 
 ## 客户端功能
 
 - 自动识别 ARM64 / x86_64，显示安装、认证、连接和进程状态，提供安装/卸载、停止/重启及日志。
-- 网页设备认证或客户端 ID/密钥；独立认证窗口完成配对，不依赖原 LuCI 标签页保持活跃。
+- 网页设备认证或客户端 ID/密钥；独立认证窗口完成配对，后台自动启动服务，不依赖原 LuCI 标签页保持活跃。设置页检测到本次认证成功后，会自动关闭仍打开的认证窗口，也支持在其他设备或页面输入设备码。
 - Subnet Router 默认关闭，启用后使用官方 IPv4 资源路由、转发和 SNAT。
 - DNS 默认**完全关闭**。可启用本机 UDP/TCP DNS，实际监听 `127.0.0.1:<端口>`，默认 `953`，并可选配置 dnsmasq 上游接管；拒绝使用 53 端口。本应用不创建 DNS 劫持规则。
 - 可选管理 OpenWrt 接口、防火墙区和 LAN 到 Pangolin 的转发，按所有权记录在停止/卸载时撤销。

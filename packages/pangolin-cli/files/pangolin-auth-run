@@ -24,3 +24,26 @@ umask 077
 # No tokens, one-time codes or account details are copied into logd.
 # The CLI atomically writes a separate token-free status file for LuCI.
 /usr/bin/pangolin login "$endpoint" --web-state /var/run/pangolin-auth/status.json </dev/null >/dev/null 2>&1
+
+# Complete the service transition in the worker, independently of LuCI polling.
+# A cancelled pairing or a configuration changed during login must not start it.
+[ -f /var/run/pangolin-auth/active ] || exit 0
+authenticated_endpoint="$endpoint"
+config_load pangolin
+config_get endpoint main endpoint https://app.pangolin.net
+config_get role main role client
+config_get client_auth main client_auth web
+[ "$endpoint" = "$authenticated_endpoint" ] && [ "$role" = client ] && [ "$client_auth" = web ] || exit 0
+# Web login can succeed before an organization and OLM credentials are ready.
+ucode -e '
+import { readfile } from "fs";
+let store = json(readfile("/etc/pangolin/client/accounts.json") ?? "{}");
+let account = store?.accounts?.[store.activeUserId ?? store.activeuserid] ?? {};
+let token = account.sessionToken ?? account.sessiontoken;
+let credentials = account.olmCredentials ?? account.olmcredentials;
+exit(account.host == replace(ARGV[0], /\/+$/, "") && token && credentials?.secret ? 0 : 1);
+' "$endpoint" || exit 0
+if ! { uci set pangolin.main.enabled=1 && uci commit pangolin && /etc/init.d/pangolin restart; }; then
+	# Authentication succeeded; report service failure without discarding it.
+	logger -t pangolin -p daemon.err 'Authentication completed, but enabling or restarting the client failed. Check the service logs.' || true
+fi

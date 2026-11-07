@@ -19,9 +19,22 @@ const callGetAuth = rpc.declare(Object.assign({ object: 'luci.pangolin', method:
 const callAuthAction = rpc.declare(Object.assign({ object: 'luci.pangolin', method: 'auth_action', params: [ 'action' ] }, rpcOptions));
 let mapData;
 let latestStatus = {};
+let authenticationWindow;
+let previousAuthAttempt;
 
 function authRenderKey(auth, status) {
 	return JSON.stringify([ auth, !!status.installed, !!status.enabled, !!status.running, !!status.connected ]);
+}
+
+function syncServiceEnabled(map, status) {
+	const enabled = status.enabled ? '1' : '0';
+	if (mapData.pangolin.enabled == enabled) return;
+	const option = map.lookupOption('enabled', 'pangolin')[0];
+	// Keep an explicit unsaved edit, but replace a stale value after the auth
+	// worker enables the service so the next save cannot silently disable it.
+	if (option.formvalue('pangolin') == mapData.pangolin.enabled)
+		option.getUIElement('pangolin')?.setValue(enabled);
+	mapData.pangolin.enabled = enabled;
 }
 
 const fields = [
@@ -266,21 +279,42 @@ function renderControls(status) {
 	]);
 }
 
-function beginAuthentication(installed) {
+function beginAuthentication(installed, auth) {
 	if (!installed) return;
 	// The foreground tab owns its RPC queue and timers. Opening a blank tab and
 	// waiting here stalls when the browser throttles this now-background page.
 	const url = L.url('admin', 'vpn', 'pangolin', 'auth');
 	const authWindow = window.open(url, '_blank');
-	if (authWindow) authWindow.opener = null;
+	if (authWindow) {
+		authWindow.opener = null;
+		authenticationWindow = authWindow;
+		previousAuthAttempt = auth?.attempt || '';
+	}
 	else showNotification(null, E('p', {}, [ _('浏览器阻止了弹窗，请点击：'),
 		E('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, _('打开设备认证页'))
 	]), 'info');
 }
 
+function closeAuthenticationWindow(auth) {
+	if (!authenticationWindow) return;
+	if (authenticationWindow.closed) {
+		authenticationWindow = null;
+		return;
+	}
+	// Existing credentials remain valid during reauthentication, including a
+	// cancelled/failed attempt. Close only after this new pairing has succeeded.
+	if (auth.authenticated && auth.pairing_state == 'authenticated' &&
+		auth.attempt && auth.attempt != previousAuthAttempt) {
+		authenticationWindow.close();
+		authenticationWindow = null;
+	}
+}
+
 function authenticationPresentation(auth) {
 	if (auth.state == 'starting') return { text: _('正在获取配对信息'), color: '#b45309' };
 	if (auth.state == 'pending') return { text: _('等待网页认证'), color: '#b45309' };
+	if (auth.authenticated && auth.attempt && [ 'error', 'expired' ].includes(auth.pairing_state))
+		return { text: _('原认证有效，本次配对未完成'), color: '#b45309' };
 	if (auth.authenticated) return { text: _('已认证'), color: '#15803d' };
 	if (auth.logged_in) return { text: _('已登录，待完成组织配置'), color: '#b45309' };
 	if (auth.state == 'expired') return { text: _('配对码已过期'), color: '#6b7280' };
@@ -293,11 +327,13 @@ function authenticationHint(auth, status) {
 	if (!status.installed) return _('请先安装 Pangolin 客户端。');
 	if (auth.state == 'starting') return reauth ? _('正在获取新的配对信息，准备重新认证。') : _('正在获取设备配对信息，请稍候…');
 	if (auth.state == 'pending') return reauth ? _('正在重新认证，请在认证页面完成配对。') : _('请在认证页面完成设备配对。');
+	if (auth.authenticated && auth.attempt && [ 'error', 'expired' ].includes(auth.pairing_state))
+		return _('原有凭据仍有效；本次配对未完成，当前连接未更新。请重新认证并完成设备授权。');
 	if (auth.authenticated) {
 		if (status.connected) return _('设备已认证，服务已连接。');
 		if (status.running) return _('设备已认证，服务正在连接。');
 		if (status.enabled) return _('设备已认证，服务已启用但未运行，请检查运行日志。');
-		return _('设备已认证。勾选“启用 Pangolin 服务”，再点击“保存并应用”启动。');
+		return _('设备已认证。服务当前已关闭，重新认证成功后会自动启用并启动服务。');
 	}
 	if (auth.logged_in) return _('账号已登录，请选择组织并完成客户端配置。');
 	if (auth.state == 'expired') return _('配对码已过期，请重新认证。');
@@ -310,7 +346,7 @@ function renderAuth(auth, status) {
 	const button = (label, action, style) => E('button', {
 		'class': 'btn cbi-button ' + (style || 'cbi-button-action'),
 		'disabled': !installed ? true : null,
-		'click': ui.createHandlerFn(null, () => action == 'start' ? beginAuthentication(installed) : callAuthAction(action).then(result => {
+		'click': ui.createHandlerFn(null, () => action == 'start' ? beginAuthentication(installed, auth) : callAuthAction(action).then(result => {
 			notifyResult(result, _('认证状态已更新。'));
 			return callGetAuth();
 		}).then(next => {
@@ -418,7 +454,7 @@ function createForm(config) {
 	section.tab('observability', _('监控与诊断'));
 	section.tab('process', _('进程设置'));
 
-	addFlag(section, 'general', 'enabled', _('启用 Pangolin 服务'), _('完成认证后勾选，再点击“保存并应用”启动；取消勾选并应用后停止服务。进程异常退出时会自动重启。'));
+	addFlag(section, 'general', 'enabled', _('启用 Pangolin 服务'), _('网页设备认证成功后自动启用并启动服务；取消勾选并应用后停止服务。进程异常退出时会自动重启。'));
 	let role = section.taboption('general', form.ListValue, 'role', _('服务角色'));
 	role.value('client', _('客户端（默认）'));
 	role.value('site', _('站点连接器（上游兼容）'));
@@ -578,9 +614,12 @@ return view.extend({
 	render: function(data) {
 		latestStatus = data[1];
 		const map = createForm(data[0]);
+		this.map = map;
 		let previousAuth = authRenderKey(data[3], data[1]);
 		poll.add(() => Promise.all([ callGetStatus(), callGetLogs(100), callGetAuth() ]).then(result => {
 			latestStatus = result[0];
+			syncServiceEnabled(map, result[0]);
+			closeAuthenticationWindow(result[2]);
 			const statusNode = document.getElementById('pangolin-status');
 			if (statusNode)
 				updateStatus(statusNode, result[0]);
@@ -608,12 +647,12 @@ return view.extend({
 
 	saveConfiguration: function(apply) {
 		const node = document.querySelector('.cbi-map');
-		return dom.callClassMethod(node, 'save').then(() => {
+		return callGetStatus().then(status => syncServiceEnabled(this.map, status)).then(() => dom.callClassMethod(node, 'save')).then(() => {
 			ui.showModal(_('保存 Pangolin 配置'), [ E('p', { 'class': 'spinning' }, apply ? _('正在保存配置并应用服务状态…') : _('正在保存配置…')) ]);
 			return callSetConfig(serializeConfig(), apply);
 		}).then(result => {
 			ui.hideModal();
-			notifyResult(result, apply ? _('配置已保存，服务状态已应用。') : _('配置已保存。点击“保存并应用”后才会启动或停止服务。'));
+			notifyResult(result, apply ? _('配置已保存，服务状态已应用。') : _('配置已保存。网页设备认证成功后会自动启用并启动服务；其他服务设置请点击“保存并应用”生效。'));
 			if (result?.success)
 				window.setTimeout(() => window.location.reload(), 700);
 		}).catch(error => {

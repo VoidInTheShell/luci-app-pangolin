@@ -181,6 +181,9 @@ function authInfo() {
 	let account = privateAccount();
 	let loggedIn = !!account.sessionToken && account.host == replace(cfg.endpoint, /\/+$/, '');
 	let authenticated = loggedIn && !!account.olmCredentials?.secret;
+	// Read the attempt before its status so a concurrent restart cannot pair a
+	// previous success with the identifier of a newly starting authentication.
+	let attempt = trim(readfile('/var/run/pangolin-auth/attempt') ?? '');
 	let raw = {};
 	try { raw = json(readfile('/var/run/pangolin-auth/status.json') ?? '{}'); } catch (e) {}
 	let state = raw.State ?? 'idle';
@@ -190,6 +193,7 @@ function authInfo() {
 			state = 'error';
 	}
 	if (state == 'pending' && int(raw.ExpiresAt) <= time()) state = 'expired';
+	let pairingState = state;
 	// A completed pairing's saved credentials outlive its transient status file.
 	// Do not present an old failure/expiry as an unauthenticated device. A live
 	// reauthentication attempt still keeps its starting/pending presentation.
@@ -199,6 +203,8 @@ function authInfo() {
 	if (index(url, replace(cfg.endpoint, /\/+$/, '') + '/auth/login/device?code=') != 0) url = '';
 	return {
 		authenticated: authenticated, logged_in: loggedIn, state: state,
+		pairing_state: pairingState,
+		attempt: attempt,
 		code: state == 'pending' ? raw.Code ?? '' : '',
 		url: state == 'pending' ? url : '',
 		expires_at: state == 'pending' ? raw.ExpiresAt : 0,

@@ -113,7 +113,10 @@ cp pangolin-public-key.pem /etc/apk/keys/pangolin-public-key.pem
 apk add ./pangolin-cli-*.apk ./luci-app-pangolin-*.apk
 /etc/init.d/rpcd restart
 
-Open LuCI -> VPN -> Pangolin. Authenticate, enable the service, save and apply.
+Install both packages; the LuCI package alone does not pull in pangolin-cli.
+No separate Newt or OLM installation is needed.
+Open LuCI -> VPN -> Pangolin. Save the server address, then authenticate.
+Successful authentication automatically enables and starts the service.
 DNS is disabled by default; the optional listener defaults to 127.0.0.1:953.
 The signing key is specific to VoidInTheShell/luci-app-pangolin.
 No credentials or device configuration are bundled. Installation does not start the VPN.
@@ -135,8 +138,13 @@ opkg install ./pangolin-cli_*.ipk ./luci-app-pangolin_*.ipk
 
 This is a local IPK bundle, not a usign-signed opkg feed.
 Dependencies (including kmod-tun) must come from the router's own firmware feeds.
+Both IPKs declare dependencies; opkg installs missing packages from those feeds.
+Offline installation also requires local copies of every missing dependency.
+Install both IPKs; the LuCI IPK alone does not pull in pangolin-cli.
+No separate Newt or OLM installation is needed.
 Do not install an SDK's kernel modules on a different kernel build.
-Open LuCI -> VPN -> Pangolin, authenticate, enable, save and apply.
+Open LuCI -> VPN -> Pangolin, save the server address, then authenticate.
+Successful authentication automatically enables and starts the service.
 DNS is disabled by default. No credentials or device configuration are bundled.
 ''')
 print(f'Verified signed {arch} packages {version} and target CLI/ucode execution.')

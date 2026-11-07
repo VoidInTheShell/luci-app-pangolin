@@ -42,7 +42,36 @@ git push origin v1.1.0
 
 ## 安装资产与签名
 
-每个 Release 包含四个压缩包（两个 OpenWrt 版本 × 两个架构）、`pangolin-public-key.pem`、`SHA256SUMS`。每个压缩包中包含匹配架构的 pangolin-cli、架构无关 LuCI 包、包校验和、manifest.json（包含 source SHA、架构、产品/上游版本）和 INSTALL.txt。APK 包含签名 packages.adb 与 index.json；IPK 包含 Packages、Packages.gz 和校验和的 OpenSSL 分离签名 packages-sha256sums.sig，使用同一 P-256 公钥验证，不作为 usign 签名 feed 发布。
+每个 Release 提供四套平台产物（两个 OpenWrt 版本 × 两个架构）：保留四个 `tar.gz`，新增四个同内容 ZIP，并提供八个独立软件包（每个平台各有 pangolin-cli 和 luci-app-pangolin）。另附 `pangolin-public-key.pem`、覆盖全部附件的 `SHA256SUMS`，以及两套独立 IPK 的校验清单和签名。
+
+完整包中包含匹配架构的 pangolin-cli、架构无关 LuCI 包、包校验和、manifest.json（包含 source SHA、架构、产品/上游版本）和 INSTALL.txt。APK 完整包包含签名 packages.adb 与 index.json；IPK 完整包包含 Packages、Packages.gz 和校验和的 OpenSSL 分离签名 packages-sha256sums.sig，使用同一 P-256 公钥验证，不作为 usign 签名 feed 发布。tar.gz 和 ZIP 内的软件包文件名及内容保持一致。
+
+独立附件的名称包含 OpenWrt 版本和构建架构，避免不同矩阵构建重名。LuCI 包的内部架构仍是 `all`（IPK）或 `noarch`（APK）；文件名中的构建架构用于选择对应的一套交付文件。独立包与完整包内原始包的字节相同，APK 内部签名不变。
+
+单独下载 APK 时，选择同一平台的两个 `.apk` 和公钥，先核对公钥与 Release 校验值，再安装：
+
+```sh
+cp pangolin-public-key.pem /etc/apk/keys/pangolin-public-key.pem
+apk verify ./pangolin-cli-*.apk ./luci-app-pangolin-*.apk
+apk add ./pangolin-cli-*.apk ./luci-app-pangolin-*.apk
+/etc/init.d/rpcd restart
+```
+
+单独下载 IPK 时，选择同一平台的两个 `.ipk`、公钥及匹配的 `*-ipk-SHA256SUMS`、`*-ipk-SHA256SUMS.sig`。在电脑上核对公钥并验证签名；目录中只放所选平台的一套文件：
+
+```sh
+openssl dgst -sha256 -verify pangolin-public-key.pem \
+  -signature *-ipk-SHA256SUMS.sig *-ipk-SHA256SUMS
+```
+
+将文件复制到路由器后执行：
+
+```sh
+sha256sum -c *-ipk-SHA256SUMS
+opkg update
+opkg install ./pangolin-cli_*.ipk ./luci-app-pangolin_*.ipk
+/etc/init.d/rpcd restart
+```
 
 签名使用本 fork 专用 P-256 密钥。私钥只保存在 GitHub Actions secret `PANGOLIN_APK_PRIVATE_KEY_B64`（PKCS#8 PEM 的 base64），公钥提交在 `keys/pangolin-public-key.pem`。构建先确认私钥导出的公钥与提交值一致，私钥在运行结束时清理，不缓存、不上传。不沿用上游作者的签名身份。
 

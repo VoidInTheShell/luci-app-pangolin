@@ -120,20 +120,23 @@ jobs:
         env:
           TARGET_PLATFORM: ${{ matrix.platform }}
         run: python3 scripts/verify-client-release.py
-      - name: Install IPKs in stock OpenWrt 24.10.2
-        if: matrix.openwrt == '24.10.2'
-        run: bash tests/test_ipk_install_openwrt.sh
       - name: Bundle architecture-specific installation files
         env:
           RELEASE_TAG: ${{ needs.checks.outputs.tag }}
         run: |
-          mkdir -p dist/release
-          tar -czf "dist/release/luci-app-pangolin-${RELEASE_TAG}-openwrt-${OPENWRT_VERSION}-${OPENWRT_PACKAGE_ARCH}.tar.gz" \
-            -C "dist/openwrt-${OPENWRT_VERSION}/${OPENWRT_PACKAGE_ARCH}" .
+          python3 scripts/bundle-client-release.py \
+            --input "dist/openwrt-${OPENWRT_VERSION}/${OPENWRT_PACKAGE_ARCH}" \
+            --output dist/release --tag "$RELEASE_TAG" \
+            --signing-key "$OPENWRT_APK_PRIVATE_KEY_FILE"
+      - name: Install standalone IPKs in stock OpenWrt 24.10.2
+        if: matrix.openwrt == '24.10.2'
+        env:
+          OPENWRT_IPK_PACKAGE_DIR: ${{ github.workspace }}/dist/release
+        run: bash tests/test_ipk_install_openwrt.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pangolin-${{ matrix.openwrt }}-${{ matrix.arch }}
-          path: dist/release/*.tar.gz
+          path: dist/release/*
           if-no-files-found: error
           retention-days: 14
       - name: Remove private signing material
@@ -164,16 +167,24 @@ jobs:
           PRERELEASE: ${{ needs.checks.outputs.prerelease }}
         run: |
           test "$(find release -name '*.tar.gz' | wc -l)" -eq 4
+          test "$(find release -name '*.zip' | wc -l)" -eq 4
+          test "$(find release -name '*.apk' | wc -l)" -eq 4
+          test "$(find release -name '*.ipk' | wc -l)" -eq 4
+          test "$(find release -name '*-ipk-SHA256SUMS' | wc -l)" -eq 2
+          test "$(find release -name '*-ipk-SHA256SUMS.sig' | wc -l)" -eq 2
           cp keys/pangolin-public-key.pem release/
-          (cd release && sha256sum *.tar.gz pangolin-public-key.pem > SHA256SUMS)
+          (cd release && sha256sum *.tar.gz *.zip *.apk *.ipk *-ipk-SHA256SUMS *-ipk-SHA256SUMS.sig pangolin-public-key.pem > SHA256SUMS)
           cat > release-notes.md <<EOF
           OpenWrt 25.12.5 (APK) and 24.10.2 (IPK), each for ARM64 (aarch64_generic) and x86_64.
           Source: ${GITHUB_SHA}
           Bundled Pangolin CLI: 0.18.1; Newt: 1.18.1; OLM: 1.10.1.
 
-          Download the archive matching your device architecture and follow INSTALL.txt inside it.
+          Each platform provides matching tar.gz and ZIP bundles, plus standalone pangolin-cli and luci-app-pangolin packages.
+          Choose the firmware and architecture in the asset name; install both packages for a complete client.
+          Bundle contents include INSTALL.txt. Standalone installation is documented in docs/RELEASING.md.
           APKs and their repository index are signed with pangolin-public-key.pem.
           IPK bundles carry a detached OpenSSL signature over packages-sha256sums using the same public key.
+          Standalone IPKs use the matching platform's -ipk-SHA256SUMS and .sig files.
           Development releases are prereleases; stable releases require a manually pushed v<VERSION> tag on main.
           EOF
           args=(--target "$GITHUB_SHA" --title "Pangolin ${RELEASE_TAG}" --notes-file release-notes.md)

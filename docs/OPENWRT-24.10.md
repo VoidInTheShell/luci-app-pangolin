@@ -27,8 +27,14 @@ the private key is never included in the output.
 
 ## Verify and install
 
-Choose the bundle matching `opkg print-architecture`. Verify the public key
-against a trusted copy before checking the signature on a computer:
+Choose the bundle matching `opkg print-architecture`. Both `tar.gz` and ZIP
+contain the same complete installation files. Standalone IPKs are also available
+with firmware and architecture in their filenames; use both the client and LuCI
+IPKs from the same platform. Their matching `*-ipk-SHA256SUMS` and `.sig` are
+covered in [release installation](RELEASING.md#安装资产与签名).
+
+For a complete bundle, verify the public key against a trusted copy before
+checking the signature on a computer:
 
 ```sh
 openssl dgst -sha256 -verify pangolin-public-key.pem \

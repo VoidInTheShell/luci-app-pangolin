@@ -10,7 +10,7 @@ OpenWrt 24.10 使用 opkg，请按 [24.10 IPK 安装说明](docs/OPENWRT-24.10.m
 
 完整客户端需安装 `pangolin-cli` 和 `luci-app-pangolin` 两个包。系统依赖由包管理器从当前固件的软件源补齐；无需额外安装独立的 Newt 或 OLM。
 
-从本仓库 [Releases](https://github.com/VoidInTheShell/luci-app-pangolin/releases) 下载与设备 `apk --print-arch` 一致的压缩包。开发版标记为 Pre-release；正式版由维护者手动打 tag 后发布。检查 Release 的 `SHA256SUMS`，解压后将文件复制到设备 `/tmp/pangolin-release`，执行：
+从本仓库 [Releases](https://github.com/VoidInTheShell/luci-app-pangolin/releases) 下载与设备 `apk --print-arch` 一致的 `tar.gz` 或 ZIP 完整包，也可直接下载同一平台的两个 APK/IPK。独立包安装见 [交付格式与安装](docs/RELEASING.md#安装资产与签名)。开发版标记为 Pre-release；正式版由维护者手动打 tag 后发布。完整包检查 Release 的 `SHA256SUMS`，解压后将文件复制到设备 `/tmp/pangolin-release`，执行：
 
 ```sh
 cd /tmp/pangolin-release

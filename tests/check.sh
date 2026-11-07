@@ -34,6 +34,7 @@ node --check "$repo_root/packages/luci-app-pangolin/htdocs/luci-static/resources
 node "$repo_root/tests/test_pangolin_client_ui.mjs"
 python3 "$repo_root/tests/test_package_files.py"
 python3 "$repo_root/tests/test_release_version.py"
+python3 "$repo_root/tests/test_release_assets.py"
 python3 "$repo_root/tests/test_pangolin_client_watch.py"
 python3 -c 'import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text())' \
 	"$repo_root/tests/verify_artifacts.py"

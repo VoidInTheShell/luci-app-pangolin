@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 arch="${OPENWRT_PACKAGE_ARCH:?}"
+package_dir="${OPENWRT_IPK_PACKAGE_DIR:-$repo_root/dist/openwrt-24.10.2/$arch}"
 case "$arch" in
 	x86_64)
 		target=x86/64; name=x86-64; platform=linux/amd64
@@ -22,7 +23,7 @@ echo "$sha  $rootfs" | sha256sum -c -
 image="pangolin-ipk-test:24.10.2-$arch"
 docker import --platform "$platform" "$rootfs" "$image" >/dev/null
 docker run --rm --platform "$platform" \
-	-v "$repo_root/dist/openwrt-24.10.2/$arch:/release:ro" \
+	-v "$package_dir:/release:ro" \
 	"$image" /bin/sh -exc '
 		mkdir -p /var/lock /tmp/run
 		# Offline mode prevents maintainer scripts loading kernel modules or

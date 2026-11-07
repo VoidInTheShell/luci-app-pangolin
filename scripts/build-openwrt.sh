@@ -9,11 +9,26 @@ package_arch="${OPENWRT_PACKAGE_ARCH:-aarch64_generic}"
 sdk_name="openwrt-sdk-${openwrt_version}-${openwrt_target}-${openwrt_subtarget}_gcc-14.3.0_musl.Linux-x86_64"
 sdk_archive="${sdk_name}.tar.zst"
 sdk_sha256="59194a023968398af64bfa7d8bc3eac322641f6dc9cdbade28a4d9dd41866eba"
+package_format=apk
 case "${openwrt_version}/${openwrt_target}/${openwrt_subtarget}/${package_arch}" in
 	25.12.5/rockchip/armv8/aarch64_generic) ;;
 	25.12.5/x86/64/x86_64) sdk_sha256="0c8df0151a1e88feb7c03d694d61f6a18d51872815b7c811d76e2b77504d5e9c" ;;
+	24.10.2/rockchip/armv8/aarch64_generic)
+		package_format=ipk
+		sdk_sha256=a5a14d5791989ad552520141e95c11fa54561f567ada9cdc091ec927a5b39f03 ;;
+	24.10.2/x86/64/x86_64)
+		package_format=ipk
+		sdk_sha256=d8f18e020d9546e465beedb9a558daf4ce00e1a29913f9f45c070bb823eb25b7 ;;
 	*) echo 'No checksum pin for the requested SDK/architecture.' >&2; exit 1 ;;
 esac
+if [ "$package_format" = ipk ]; then
+	sdk_name="openwrt-sdk-${openwrt_version}-${openwrt_target}-${openwrt_subtarget}_gcc-13.3.0_musl.Linux-x86_64"
+	sdk_archive="${sdk_name}.tar.zst"
+	if [ -n "${PANGOLIN_PACKAGE_VERSION:-}" ]; then
+		# opkg uses Debian-style prerelease ordering rather than APK's _pre.
+		export PANGOLIN_PACKAGE_VERSION="${PANGOLIN_PACKAGE_VERSION/_pre/\~pre}"
+	fi
+fi
 public_key="${OPENWRT_PUBLIC_KEY_FILE:-$repo_root/keys/openwrt-newt-public-key.pem}"
 public_key_name="$(basename "$public_key")"
 sdk_url="https://downloads.openwrt.org/releases/${openwrt_version}/targets/${openwrt_target}/${openwrt_subtarget}/${sdk_archive}"
@@ -75,8 +90,10 @@ sed -i \
 	-e '/^# CONFIG_SIGNED_PACKAGES is not set$/d' \
 	.config
 
-if [ ! -f feeds/base.index ] || [ ! -f feeds/packages.index ] || [ ! -f feeds/luci.index ]; then
-	./scripts/feeds update base packages luci
+if [ ! -f feeds/packages.index ] || [ ! -f feeds/luci.index ]; then
+	feeds=(packages luci)
+	if grep -Eq '^src-[^ ]+ base ' feeds.conf.default; then feeds+=(base); fi
+	./scripts/feeds update "${feeds[@]}"
 fi
 
 # The release SDK keeps core package sources in its commit-pinned `base` feed.
@@ -118,7 +135,13 @@ if [ -n "${OPENWRT_APK_PRIVATE_KEY_FILE:-}" ]; then
 	fi
 	install -m 0600 "$OPENWRT_APK_PRIVATE_KEY_FILE" "$temporary_signing_key"
 	trap 'rm -f "$temporary_signing_key"' EXIT
-	echo 'CONFIG_SIGNED_PACKAGES=y' >> .config
+	if [ "$package_format" = apk ]; then
+		echo 'CONFIG_SIGNED_PACKAGES=y' >> .config
+	else
+		# IPK downloads are authenticated by a detached signature over their
+		# checksums. Do not publish the SDK's temporary usign repository key.
+		echo '# CONFIG_SIGNED_PACKAGES is not set' >> .config
+	fi
 else
 	echo '# CONFIG_SIGNED_PACKAGES is not set' >> .config
 fi
@@ -178,6 +201,27 @@ fi
 make package/pangolin-cli/compile NO_DEPS=1 V=s
 make package/luci-app-pangolin/compile V=s
 make package/index
+
+if [ "$package_format" = ipk ]; then
+	package_names=(pangolin-cli luci-app-pangolin)
+	if [ "${PANGOLIN_CLIENT_ONLY:-0}" != 1 ]; then package_names+=(newt luci-app-newt); fi
+	for name in "${package_names[@]}"; do
+		mapfile -t matches < <(find bin/packages -type f -name "${name}_*.ipk")
+		[ "${#matches[@]}" -eq 1 ] || { echo "Expected exactly one ${name} IPK, found ${#matches[@]}" >&2; exit 1; }
+		rm -f "$output_dir/${name}_"*.ipk
+		install -m 0644 "${matches[0]}" "$output_dir/"
+	done
+	(cd "$output_dir" && MKHASH="$sdk_dir/staging_dir/host/bin/mkhash" "$sdk_dir/scripts/ipkg-make-index.sh" . > Packages)
+	gzip -n -9 -c "$output_dir/Packages" > "$output_dir/Packages.gz"
+	(cd "$output_dir" && sha256sum ./*.ipk ./Packages ./Packages.gz > packages-sha256sums)
+	if [ -n "${OPENWRT_APK_PRIVATE_KEY_FILE:-}" ]; then
+		install -m 0644 "$public_key" "$output_dir/pangolin-public-key.pem"
+		openssl dgst -sha256 -sign "$temporary_signing_key" \
+			-out "$output_dir/packages-sha256sums.sig" "$output_dir/packages-sha256sums"
+	fi
+	echo "IPK build complete: $output_dir"
+	exit 0
+fi
 
 newt_apk="$(find bin/packages -type f -name 'newt-*.apk' -print -quit)"
 luci_apk="$(find bin/packages -type f -name 'luci-app-newt-*.apk' -print -quit)"

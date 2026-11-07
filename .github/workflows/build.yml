@@ -53,6 +53,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        openwrt: ['25.12.5', '24.10.2']
+        arch: [aarch64_generic, x86_64]
         include:
           - arch: aarch64_generic
             target: rockchip
@@ -65,7 +67,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      OPENWRT_VERSION: '25.12.5'
+      OPENWRT_VERSION: ${{ matrix.openwrt }}
       OPENWRT_TARGET: ${{ matrix.target }}
       OPENWRT_SUBTARGET: ${{ matrix.subtarget }}
       OPENWRT_PACKAGE_ARCH: ${{ matrix.arch }}
@@ -95,7 +97,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/*.tar.*
-          key: pangolin-25.12.5-${{ matrix.arch }}-archives-v1
+          key: pangolin-${{ matrix.openwrt }}-${{ matrix.arch }}-archives-v1
       - name: Prepare signing key
         env:
           SIGNING_KEY_B64: ${{ github.event_name != 'pull_request' && secrets.PANGOLIN_APK_PRIVATE_KEY_B64 || '' }}
@@ -118,16 +120,19 @@ jobs:
         env:
           TARGET_PLATFORM: ${{ matrix.platform }}
         run: python3 scripts/verify-client-release.py
+      - name: Install IPKs in stock OpenWrt 24.10.2
+        if: matrix.openwrt == '24.10.2'
+        run: bash tests/test_ipk_install_openwrt.sh
       - name: Bundle architecture-specific installation files
         env:
           RELEASE_TAG: ${{ needs.checks.outputs.tag }}
         run: |
           mkdir -p dist/release
-          tar -czf "dist/release/luci-app-pangolin-${RELEASE_TAG}-openwrt-25.12.5-${OPENWRT_PACKAGE_ARCH}.tar.gz" \
-            -C "dist/openwrt-25.12.5/${OPENWRT_PACKAGE_ARCH}" .
+          tar -czf "dist/release/luci-app-pangolin-${RELEASE_TAG}-openwrt-${OPENWRT_VERSION}-${OPENWRT_PACKAGE_ARCH}.tar.gz" \
+            -C "dist/openwrt-${OPENWRT_VERSION}/${OPENWRT_PACKAGE_ARCH}" .
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: pangolin-${{ matrix.arch }}
+          name: pangolin-${{ matrix.openwrt }}-${{ matrix.arch }}
           path: dist/release/*.tar.gz
           if-no-files-found: error
           retention-days: 14
@@ -158,16 +163,17 @@ jobs:
           RELEASE_TAG: ${{ needs.checks.outputs.tag }}
           PRERELEASE: ${{ needs.checks.outputs.prerelease }}
         run: |
-          test "$(find release -name '*.tar.gz' | wc -l)" -eq 2
+          test "$(find release -name '*.tar.gz' | wc -l)" -eq 4
           cp keys/pangolin-public-key.pem release/
           (cd release && sha256sum *.tar.gz pangolin-public-key.pem > SHA256SUMS)
           cat > release-notes.md <<EOF
-          OpenWrt 25.12.5 / ARM64 (aarch64_generic) and x86_64.
+          OpenWrt 25.12.5 (APK) and 24.10.2 (IPK), each for ARM64 (aarch64_generic) and x86_64.
           Source: ${GITHUB_SHA}
           Bundled Pangolin CLI: 0.18.1; Newt: 1.18.1; OLM: 1.10.1.
 
           Download the archive matching your device architecture and follow INSTALL.txt inside it.
-          Both APKs and the repository index are signed with pangolin-public-key.pem.
+          APKs and their repository index are signed with pangolin-public-key.pem.
+          IPK bundles carry a detached OpenSSL signature over packages-sha256sums using the same public key.
           Development releases are prereleases; stable releases require a manually pushed v<VERSION> tag on main.
           EOF
           args=(--target "$GITHUB_SHA" --title "Pangolin ${RELEASE_TAG}" --notes-file release-notes.md)

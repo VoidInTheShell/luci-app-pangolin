@@ -2,7 +2,7 @@
 
 ## 开发与正式发布边界
 
-`dev` 从 `main` 创建，通过正常 merge 接收功能分支。推送到 `dev` 后 GitHub Actions 自动运行静态检查、回归、真实 OpenWrt rpcd 测试，使用官方 OpenWrt 25.12.5 SDK 构建 ARM64 与 x86_64 APK，验证签名和目标架构执行，再发布 Pre-release。
+`dev` 从 `main` 创建，通过正常 merge 接收功能分支。推送到 `dev` 后 GitHub Actions 自动运行静态检查、回归、真实 OpenWrt rpcd 测试，使用官方 OpenWrt 25.12.5 和 24.10.2 SDK 分别构建 ARM64 与 x86_64 的 APK 和 IPK，验证签名和目标架构执行，再发布 Pre-release。
 
 每个开发 Release 使用独立 tag，绑定触发构建的确切 commit。开发版不设置 Latest。只有两个架构和检查全部成功才发布。PR 只验证，不读取正式签名 secret、不发版；PR 构建用临时测试签名。
 
@@ -14,6 +14,7 @@
 - 初始基础版本：`1.1.0`，首次正式版发布后在 dev 将 VERSION 更新为下一个计划版本。
 - 开发 tag：`v1.1.0-dev.<GitHub run_number>.<run_attempt>`。
 - 开发 APK：`1.1.0_pre<run_number>-r<run_attempt>`。
+- 开发 IPK：`1.1.0~pre<run_number>-r<run_attempt>`，使用 opkg 的预发布排序。
 - 正式 tag：`v1.1.0`，必须与该提交的 VERSION 完全一致。
 - 正式 APK：`1.1.0-r0`。APK 的 `_pre` 规则确保同一基础版本的正式版高于开发版。
 - 两个产品 APK 版本一致；`pangolin version` 和 `/usr/share/pangolin/version` 仍显示实际上游 CLI `0.18.1`。源包 URL、Newt/OLM pin 不随产品版本变化。
@@ -41,11 +42,11 @@ git push origin v1.1.0
 
 ## 安装资产与签名
 
-每个 Release 包含两个架构压缩包、`pangolin-public-key.pem`、`SHA256SUMS`。每个压缩包中包含匹配架构的 pangolin-cli、noarch LuCI APK、签名 packages.adb、index.json、包校验和、manifest.json（包含 source SHA、架构、产品/上游版本）和 INSTALL.txt。
+每个 Release 包含四个压缩包（两个 OpenWrt 版本 × 两个架构）、`pangolin-public-key.pem`、`SHA256SUMS`。每个压缩包中包含匹配架构的 pangolin-cli、架构无关 LuCI 包、包校验和、manifest.json（包含 source SHA、架构、产品/上游版本）和 INSTALL.txt。APK 包含签名 packages.adb 与 index.json；IPK 包含 Packages、Packages.gz 和校验和的 OpenSSL 分离签名 packages-sha256sums.sig，使用同一 P-256 公钥验证，不作为 usign 签名 feed 发布。
 
 签名使用本 fork 专用 P-256 密钥。私钥只保存在 GitHub Actions secret `PANGOLIN_APK_PRIVATE_KEY_B64`（PKCS#8 PEM 的 base64），公钥提交在 `keys/pangolin-public-key.pem`。构建先确认私钥导出的公钥与提交值一致，私钥在运行结束时清理，不缓存、不上传。不沿用上游作者的签名身份。
 
-安装两个 APK 时官方 OpenWrt 仓库应可用，以解析 kmod-tun、LuCI、ucode、curl 等运行依赖。这里只发布 OpenWrt 25.12.5 APK，不发布 IPK 或固件镜像。
+安装 APK 或 IPK 时设备自身的官方 OpenWrt 仓库应可用，以解析 kmod-tun、LuCI、ucode、curl 等运行依赖。发布 OpenWrt 25.12.5 APK 和 24.10.2 IPK，不发布固件镜像。IPK 的签名验证与安装见 [24.10 说明](OPENWRT-24.10.md)。
 
 ## 本地复现
 

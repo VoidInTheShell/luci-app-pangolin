@@ -2,9 +2,11 @@
 
 在 OpenWrt 上安装、认证、配置和管理官方 Pangolin **客户端**，可选启用官方 Subnet Router。基于 [alexanderjlynn/openwrt-newt](https://github.com/alexanderjlynn/openwrt-newt) fork 开发，保留上游许可证与站点连接器兼容代码。
 
-支持 OpenWrt **25.12.5 / APK v3**，提供 **ARM64 (`aarch64_generic`)** 和 **x86_64** 安装包，不支持 32 位。上游固定版本：Pangolin CLI 0.18.1、Newt 1.18.1、OLM 1.10.1。
+支持 OpenWrt **25.12.5 / APK v3** 和 **24.10.2 / IPK**，每个版本提供 **ARM64 (`aarch64_generic`)** 和 **x86_64** 安装包，不支持 32 位。上游固定版本：Pangolin CLI 0.18.1、Newt 1.18.1、OLM 1.10.1。
 
 ## 安装
+
+OpenWrt 24.10 使用 opkg，请按 [24.10 IPK 安装说明](docs/OPENWRT-24.10.md) 验证签名并安装对应架构的软件包。下面的 APK 命令适用于 25.12。
 
 从本仓库 [Releases](https://github.com/VoidInTheShell/luci-app-pangolin/releases) 下载与设备 `apk --print-arch` 一致的压缩包。开发版标记为 Pre-release；正式版由维护者手动打 tag 后发布。检查 Release 的 `SHA256SUMS`，解压后将文件复制到设备 `/tmp/pangolin-release`，执行：
 

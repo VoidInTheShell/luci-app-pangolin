@@ -13,10 +13,16 @@ repo = Path(__file__).resolve().parents[1]
 arch = os.environ['OPENWRT_PACKAGE_ARCH']
 target = os.environ['OPENWRT_TARGET']
 subtarget = os.environ['OPENWRT_SUBTARGET']
-version = os.environ['PANGOLIN_PACKAGE_VERSION'] + '-r' + os.environ['PANGOLIN_PACKAGE_RELEASE']
-sdk = repo / '.cache' / f'openwrt-sdk-25.12.5-{target}-{subtarget}_gcc-14.3.0_musl.Linux-x86_64'
+openwrt = os.environ.get('OPENWRT_VERSION', '25.12.5')
+is_ipk = openwrt.startswith('24.10.')
+product_version = os.environ['PANGOLIN_PACKAGE_VERSION']
+if is_ipk:
+    product_version = product_version.replace('_pre', '~pre')
+version = product_version + '-r' + os.environ['PANGOLIN_PACKAGE_RELEASE']
+gcc = '13.3.0' if is_ipk else '14.3.0'
+sdk = Path(os.environ.get('OPENWRT_SDK_DIR', repo / '.cache' / f'openwrt-sdk-{openwrt}-{target}-{subtarget}_gcc-{gcc}_musl.Linux-x86_64'))
 apk = sdk / 'staging_dir/host/bin/apk'
-output = repo / 'dist/openwrt-25.12.5' / arch
+output = repo / f'dist/openwrt-{openwrt}' / arch
 key = output / 'pangolin-public-key.pem'
 assert key.read_bytes() == Path(os.environ['OPENWRT_PUBLIC_KEY_FILE']).read_bytes()
 
@@ -25,19 +31,38 @@ def run(*args, **kwargs):
     return subprocess.check_output([str(a) for a in args], text=True, **kwargs).strip()
 
 
-packages = [output / f'{name}-{version}.apk' for name in ['pangolin-cli', 'luci-app-pangolin']]
-run(apk, 'verify', '--keys-dir', output, *packages, output / 'packages.adb')
+if is_ipk:
+    packages = [output / f'pangolin-cli_{version}_{arch}.ipk', output / f'luci-app-pangolin_{version}_all.ipk']
+    run('openssl', 'dgst', '-sha256', '-verify', key, '-signature', output / 'packages-sha256sums.sig', output / 'packages-sha256sums')
+else:
+    packages = [output / f'{name}-{version}.apk' for name in ['pangolin-cli', 'luci-app-pangolin']]
+    run(apk, 'verify', '--keys-dir', output, *packages, output / 'packages.adb')
 subprocess.run(['sha256sum', '-c', 'packages-sha256sums'], cwd=output, check=True)
 with tempfile.TemporaryDirectory(prefix='pangolin-verify-') as work:
     work = Path(work)
     for package in packages:
-        info = json.loads(run(apk, 'adbdump', '--format', 'json', package))['info']
+        if is_ipk:
+            # OpenWrt IPKs are tar containers with control/data tarballs.
+            unpack = work / package.stem
+            unpack.mkdir()
+            run('tar', '-xf', package, '-C', unpack)
+            control_dir = unpack / 'control-files'
+            control_dir.mkdir()
+            run('tar', '-xf', unpack / 'control.tar.gz', '-C', control_dir)
+            control = dict(line.split(': ', 1) for line in (control_dir / 'control').read_text().splitlines() if ': ' in line)
+            info = dict(name=control['Package'], version=control['Version'], arch=control['Architecture'],
+                        depends=[d.strip().split(' ')[0] for d in control.get('Depends', '').split(',')])
+        else:
+            info = json.loads(run(apk, 'adbdump', '--format', 'json', package))['info']
         assert info['version'] == version, info
-        expected_arch = arch if info['name'] == 'pangolin-cli' else 'noarch'
+        expected_arch = arch if info['name'] == 'pangolin-cli' else ('all' if is_ipk else 'noarch')
         assert info['arch'] == expected_arch, info
         root = work / info['name']
         root.mkdir()
-        run(apk, 'extract', '--keys-dir', output, '--destination', root, package)
+        if is_ipk:
+            run('tar', '-xf', unpack / 'data.tar.gz', '-C', root)
+        else:
+            run(apk, 'extract', '--keys-dir', output, '--destination', root, package)
         for path in root.rglob('*'):
             if not path.is_file():
                 continue
@@ -72,7 +97,7 @@ with tempfile.TemporaryDirectory(prefix='pangolin-verify-') as work:
             '/openwrt/usr/bin/ucode', '-L', '/openwrt/usr/lib/ucode', '-c', '-o', '/tmp/check.ucb',
             '/source/' + str(path.relative_to(repo)))
 
-manifest = dict(source=os.environ['GITHUB_SHA'], product_version=version, openwrt='25.12.5',
+manifest = dict(source=os.environ['GITHUB_SHA'], product_version=version, openwrt=openwrt,
                 architecture=arch, cli='0.18.1', newt='1.18.1', olm='1.10.1',
                 packages={p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in packages})
 (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
@@ -92,5 +117,26 @@ Open LuCI -> VPN -> Pangolin. Authenticate, enable the service, save and apply.
 DNS is disabled by default; the optional listener defaults to 127.0.0.1:953.
 The signing key is specific to VoidInTheShell/luci-app-pangolin.
 No credentials or device configuration are bundled. Installation does not start the VPN.
+''')
+if is_ipk:
+    (output / 'INSTALL.txt').write_text(f'''Pangolin client for OpenWrt {openwrt} (IPK / opkg)
+
+Use only the archive matching opkg print-architecture ({arch}).
+Verify the public key against a trusted release key before using it.
+On a computer with OpenSSL, verify the detached checksum signature:
+openssl dgst -sha256 -verify pangolin-public-key.pem -signature packages-sha256sums.sig packages-sha256sums
+
+On the router, extract to /tmp/pangolin-release, then:
+cd /tmp/pangolin-release
+sha256sum -c packages-sha256sums
+opkg update
+opkg install ./pangolin-cli_*.ipk ./luci-app-pangolin_*.ipk
+/etc/init.d/rpcd restart
+
+This is a local IPK bundle, not a usign-signed opkg feed.
+Dependencies (including kmod-tun) must come from the router's own firmware feeds.
+Do not install an SDK's kernel modules on a different kernel build.
+Open LuCI -> VPN -> Pangolin, authenticate, enable, save and apply.
+DNS is disabled by default. No credentials or device configuration are bundled.
 ''')
 print(f'Verified signed {arch} packages {version} and target CLI/ucode execution.')

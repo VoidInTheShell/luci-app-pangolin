@@ -79,8 +79,8 @@ with tempfile.TemporaryDirectory(prefix='pangolin-verify-') as work:
             assert blob[:6] == b'\x7fELF\x02\x01'
             assert struct.unpack_from('<H', blob, 18)[0] == (183 if arch == 'aarch64_generic' else 62)
             platform = os.environ['TARGET_PLATFORM']
-            cmd = ['docker', 'run', '--rm', '--platform', platform, '-v', f'{root}:/payload:ro',
-                   '-e', 'PANGOLIN_CLI_DISABLE_UPDATE_CHECK=true', 'debian:bookworm-slim', '/payload/usr/bin/pangolin']
+            cmd = ['docker', 'run', '--rm', '--network', 'none', '--platform', platform,
+                   '-v', f'{root}:/payload:ro', 'debian:bookworm-slim', '/payload/usr/bin/pangolin']
             assert run(*cmd, 'version') == '0.18.1'
             help_text = run(*cmd, 'up', 'client', '--help')
             for flag in ['--dns-listen', '--disable-dns', '--subnet-router', '--prefer-local-routes']:

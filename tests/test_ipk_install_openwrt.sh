@@ -22,7 +22,6 @@ echo "$sha  $rootfs" | sha256sum -c -
 image="pangolin-ipk-test:24.10.2-$arch"
 docker import --platform "$platform" "$rootfs" "$image" >/dev/null
 docker run --rm --platform "$platform" \
-	-e PANGOLIN_CLI_DISABLE_UPDATE_CHECK=true \
 	-v "$repo_root/dist/openwrt-24.10.2/$arch:/release:ro" \
 	"$image" /bin/sh -exc '
 		mkdir -p /var/lock /tmp/run
@@ -34,7 +33,10 @@ docker run --rm --platform "$platform" \
 		# opkg offline mode skips postinst. Exercise the CLI maintainer script
 		# explicitly; its default configuration leaves the VPN disabled.
 		sh /usr/lib/opkg/info/pangolin-cli.postinst configure
-		test "$(pangolin version)" = 0.18.1
+		# The version subcommand may append an online update notice.
+			# Capture it first so a failed command still fails this test.
+			version_output="$(pangolin version)"
+			test "$(printf "%s\n" "$version_output" | sed -n 1p)" = 0.18.1
 		stat -c %a /etc/config/pangolin
 		test "$(stat -c %a /etc/config/pangolin)" = 600
 		for file in /usr/libexec/pangolin-*.uc /usr/share/rpcd/ucode/luci.pangolin; do

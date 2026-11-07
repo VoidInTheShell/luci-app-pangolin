@@ -34,11 +34,10 @@ docker run --rm --platform "$platform" \
 		# explicitly; its default configuration leaves the VPN disabled.
 		sh /usr/lib/opkg/info/pangolin-cli.postinst configure
 		# The version subcommand may append an online update notice.
-			# Capture it first so a failed command still fails this test.
-			version_output="$(PANGOLIN_CLI_DISABLE_UPDATE_CHECK=true pangolin version)"
-			test "$(printf "%s\n" "$version_output" | sed -n 1p)" = 0.18.1
-		stat -c %a /etc/config/pangolin
-		test "$(stat -c %a /etc/config/pangolin)" = 600
+		# Capture it first so a failed command still fails this test.
+		version_output="$(PANGOLIN_CLI_DISABLE_UPDATE_CHECK=true pangolin version)"
+		test "$(printf "%s\n" "$version_output" | sed -n 1p)" = 0.18.1
+		ls -l /etc/config/pangolin | grep -E "^-rw-------[[:space:]]"
 		for file in /usr/libexec/pangolin-*.uc /usr/share/rpcd/ucode/luci.pangolin; do
 			ucode -c -o /tmp/check.ucb "$file"
 		done

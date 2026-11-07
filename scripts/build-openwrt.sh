@@ -62,9 +62,15 @@ fi
 mkdir -p "$cache_dir" "$output_dir"
 
 if [ ! -d "$sdk_dir" ]; then
-	if [ ! -f "$archive_path" ]; then
+	if [ ! -f "$archive_path" ] || [ -f "$archive_path.aria2" ]; then
 		echo "Downloading ${sdk_archive}"
-		curl -fL --retry 3 -o "$archive_path" "$sdk_url"
+		if command -v aria2c >/dev/null 2>&1; then
+			aria2c --no-conf --max-connection-per-server=8 --split=8 \
+				--min-split-size=1M --file-allocation=none --max-tries=3 --retry-wait=2 \
+				--checksum="sha-256=${sdk_sha256}" --dir="$cache_dir" --out="$sdk_archive" "$sdk_url"
+		else
+			curl -fL --retry 3 -o "$archive_path" "$sdk_url"
+		fi
 	fi
 
 	echo "${sdk_sha256}  ${archive_path}" | sha256sum -c -

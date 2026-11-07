@@ -22,6 +22,7 @@ echo "$sha  $rootfs" | sha256sum -c -
 image="pangolin-ipk-test:24.10.2-$arch"
 docker import --platform "$platform" "$rootfs" "$image" >/dev/null
 docker run --rm --platform "$platform" \
+	-e PANGOLIN_CLI_DISABLE_UPDATE_CHECK=true \
 	-v "$repo_root/dist/openwrt-24.10.2/$arch:/release:ro" \
 	"$image" /bin/sh -exc '
 		mkdir -p /var/lock /tmp/run

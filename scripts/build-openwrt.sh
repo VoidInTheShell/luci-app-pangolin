@@ -96,11 +96,16 @@ sed -i \
 	-e '/^# CONFIG_SIGNED_PACKAGES is not set$/d' \
 	.config
 
-if [ ! -f feeds/packages.index ] || [ ! -f feeds/luci.index ]; then
-	feeds=(packages luci)
-	if grep -Eq '^src-[^ ]+ base ' feeds.conf.default; then feeds+=(base); fi
-	./scripts/feeds update "${feeds[@]}"
+feeds=(packages luci)
+# SDK feed definitions may separate fields with tabs instead of spaces.
+if grep -Eq '^src-[^[:space:]]+[[:space:]]+base[[:space:]]' feeds.conf.default; then
+	feeds+=(base)
 fi
+for feed_name in "${feeds[@]}"; do
+	if [ ! -f "feeds/$feed_name.index" ]; then
+		./scripts/feeds update "$feed_name"
+	fi
+done
 
 # The release SDK keeps core package sources in its commit-pinned `base` feed.
 # Installing luci-base recursively links only the core and packages-feed

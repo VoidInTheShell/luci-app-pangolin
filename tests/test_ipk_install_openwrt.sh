@@ -35,7 +35,7 @@ docker run --rm --platform "$platform" \
 		sh /usr/lib/opkg/info/pangolin-cli.postinst configure
 		# The version subcommand may append an online update notice.
 			# Capture it first so a failed command still fails this test.
-			version_output="$(pangolin version)"
+			version_output="$(PANGOLIN_CLI_DISABLE_UPDATE_CHECK=true pangolin version)"
 			test "$(printf "%s\n" "$version_output" | sed -n 1p)" = 0.18.1
 		stat -c %a /etc/config/pangolin
 		test "$(stat -c %a /etc/config/pangolin)" = 600

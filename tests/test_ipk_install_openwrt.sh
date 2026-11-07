@@ -23,14 +23,18 @@ image="pangolin-ipk-test:24.10.2-$arch"
 docker import --platform "$platform" "$rootfs" "$image" >/dev/null
 docker run --rm --platform "$platform" \
 	-v "$repo_root/dist/openwrt-24.10.2/$arch:/release:ro" \
-	"$image" /bin/sh -ec '
+	"$image" /bin/sh -exc '
 		mkdir -p /var/lock /tmp/run
 		# Offline mode prevents maintainer scripts loading kernel modules or
 		# starting services. Dependencies still resolve against stock 24.10.2.
 		opkg --offline-root / update
 		opkg --offline-root / install /release/pangolin-cli_*.ipk /release/luci-app-pangolin_*.ipk
 		opkg list-installed | grep -E "^(pangolin-cli|luci-app-pangolin|rpcd-mod-ucode|ucode-mod-uci|kmod-tun) "
+		# opkg offline mode skips postinst. Exercise the CLI maintainer script
+		# explicitly; its default configuration leaves the VPN disabled.
+		sh /usr/lib/opkg/info/pangolin-cli.postinst configure
 		test "$(pangolin version)" = 0.18.1
+		stat -c %a /etc/config/pangolin
 		test "$(stat -c %a /etc/config/pangolin)" = 600
 		for file in /usr/libexec/pangolin-*.uc /usr/share/rpcd/ucode/luci.pangolin; do
 			ucode -c -o /tmp/check.ucb "$file"

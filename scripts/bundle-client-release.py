@@ -45,9 +45,11 @@ def bundle(source, output, tag, signing_key=None):
         raise ValueError('Standalone IPK checksums require the release signing key')
 
     prefix = f'luci-app-pangolin-{tag}-openwrt-{firmware}-{arch}'
+    # GitHub rewrites characters such as '~' in uploaded asset names.
+    asset_version = re.sub(r'[^A-Za-z0-9._-]', '_', version)
     direct_names = {
-        name: (f'{name}_{version}_openwrt-{firmware}_{arch}.ipk' if is_ipk
-               else f'{name}-{version}-openwrt-{firmware}-{arch}.apk')
+        name: (f'{name}_{asset_version}_openwrt-{firmware}_{arch}.ipk' if is_ipk
+               else f'{name}-{asset_version}-openwrt-{firmware}-{arch}.apk')
         for name in package_names
     }
     asset_names = [prefix + '.tar.gz', prefix + '.zip', *direct_names.values()]

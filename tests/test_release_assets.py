@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import re
 import subprocess
 import tarfile
 import tempfile
@@ -52,6 +53,7 @@ class ReleaseAssetTests(unittest.TestCase):
             for arch in ('aarch64_generic', 'x86_64'):
                 source = self.source(firmware, arch)
                 assets = module.bundle(source, output, 'v1.1.0-dev.1.1', self.key)
+                self.assertTrue(all(re.fullmatch(r'[A-Za-z0-9._-]+', p.name) for p in assets))
                 emitted.extend(assets)
                 expected = {p.name: p.read_bytes() for p in source.iterdir()}
                 with tarfile.open(next(p for p in assets if p.name.endswith('.tar.gz'))) as archive:

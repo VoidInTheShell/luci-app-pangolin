@@ -1,81 +1,89 @@
-.pangolin-service-card {
+#pangolin-controls .pangolin-service-card,
+#pangolin-auth .pangolin-auth-card {
 	grid-column: 1 / -1;
+	text-align: center;
 }
 
-.pangolin-auth-heading {
+#pangolin-controls .pangolin-service-card > h3,
+#pangolin-auth .pangolin-auth-heading {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	justify-content: center;
 	gap: .5rem;
+	width: 100%;
 	text-align: center;
 }
 
-.pangolin-auth-heading [role="status"] {
-	font-size: .85rem;
-	font-weight: normal;
+#pangolin-auth .pangolin-auth-heading > span:first-child {
+	flex: 0 0 auto;
 }
 
-.pangolin-auth-actions {
-	display: flex;
+#pangolin-auth .pangolin-auth-description {
+	display: inline-flex;
 	flex-wrap: wrap;
-	align-items: stretch;
-	justify-content: center;
-	gap: .65rem;
-}
-
-.pangolin-auth-actions > button {
-	display: flex;
 	align-items: center;
 	justify-content: center;
+	gap: .5rem;
+	min-width: 0;
+	font-size: .85rem;
+	font-weight: normal;
+	line-height: 1.6;
+}
+
+#pangolin-auth .pangolin-auth-separator {
+	font-weight: normal;
+	opacity: .55;
+}
+
+#pangolin-auth .pangolin-auth-actions,
+#pangolin-auth .pangolin-auth-pairing,
+#pangolin-controls .pangolin-service-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: center;
+	gap: .65rem;
+	width: 100%;
+	text-align: center;
+}
+
+#pangolin-auth .pangolin-auth-pairing {
+	margin: 1rem 0;
+}
+
+#pangolin-auth .pangolin-auth-actions > button,
+#pangolin-controls .pangolin-service-actions > button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	float: none;
 	min-width: 0;
 	margin: 0;
 	white-space: normal;
 	text-align: center;
 }
 
-.pangolin-service-card > h3 {
-	text-align: center;
-}
-
-.pangolin-service-actions {
-	display: flex;
-	flex-wrap: wrap;
-	justify-content: center;
-	align-items: center;
-	gap: .65rem;
-}
-
-.pangolin-service-actions > button {
-	margin: 0;
-	text-align: center;
-}
-
-.pangolin-service-actions > .pangolin-autostart.is-disabled {
+#pangolin-controls .pangolin-service-actions > .pangolin-autostart.is-disabled {
 	background: #fff !important;
 	color: #334155 !important;
 	border: 1px solid #cbd5e1 !important;
 }
 
-.pangolin-service-actions > .pangolin-autostart.is-enabled {
+#pangolin-controls .pangolin-service-actions > .pangolin-autostart.is-enabled {
 	background: #008bb9 !important;
 	color: #fff !important;
 	border: 1px solid #008bb9 !important;
 }
 
 @media (max-width: 600px) {
-	.pangolin-service-actions {
+	#pangolin-controls .pangolin-service-actions {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		align-items: stretch;
 	}
 
-	.pangolin-service-actions > button {
-		display: flex;
-		align-items: center;
-		justify-content: center;
+	#pangolin-controls .pangolin-service-actions > button {
 		width: 100%;
-		min-width: 0;
-		white-space: normal;
 	}
 }

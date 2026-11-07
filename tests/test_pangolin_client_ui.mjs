@@ -8,7 +8,7 @@ const source = fs.readFileSync(new URL('../packages/luci-app-pangolin/htdocs/luc
 const css = fs.readFileSync(new URL('../packages/luci-app-pangolin/htdocs/luci-static/resources/view/pangolin/pangolin.css', import.meta.url), 'utf8');
 function cssRule(selector) {
 	const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-	const match = css.match(new RegExp(escaped + '\\s*\\{([^}]+)\\}'));
+	const match = css.match(new RegExp(escaped + '(?:\\s*,[^{}]*)?\\s*\\{([^}]+)\\}'));
 	assert.ok(match, 'Missing CSS rule: ' + selector);
 	return match[1];
 }
@@ -26,8 +26,8 @@ const context = vm.createContext({
 	ui: { createHandlerFn: (scope, fn) => fn },
 	E: (tag, attrs, children) => ({ tag, attrs: attrs || {}, children })
 });
-vm.runInContext(helpers + '\nthis.helpers = { validateEndpoint, renderControls, authenticationPresentation, authenticationSummary, renderAuth, beginAuthentication };', context);
-const { validateEndpoint, renderControls, authenticationPresentation, authenticationSummary, renderAuth, beginAuthentication } = context.helpers;
+vm.runInContext(helpers + '\nthis.helpers = { validateEndpoint, renderControls, authenticationPresentation, authenticationHint, authRenderKey, authenticationSummary, renderAuth, beginAuthentication, showNotification };', context);
+const { validateEndpoint, renderControls, authenticationPresentation, authenticationHint, authRenderKey, authenticationSummary, renderAuth, beginAuthentication, showNotification } = context.helpers;
 for (const value of ['https://pangolin.suanlemei.cloud/', 'https://server.example:8443/', 'https://192.0.2.1/', 'https://[2001:db8::1]:8443/'])
 	assert.equal(validateEndpoint('test', value), true, value);
 for (const value of ['http://server.example', 'https://', 'server.example', 'https://user:password@server.example'])
@@ -58,7 +58,7 @@ for (const [state, expected] of [
 const auth = { authenticated: true, logged_in: true, selected_org: 'test-org', organizations: [{ ID: 'test-org', Name: 'Example' }] };
 assert.equal(authenticationSummary({ configured: true, authentication: auth }), '已就绪，当前组织：Example（组织 ID：test-org），可用组织：Example（组织 ID：test-org）');
 assert.equal(authenticationSummary({ configured: false }), '待认证或填写凭据');
-const authCard = renderAuth(auth, true);
+const authCard = renderAuth(auth, { installed: true });
 assert.equal(JSON.stringify(authCard).includes('当前组织：'), false);
 assert.equal(JSON.stringify(authCard).includes('可用组织：'), false);
 const actionRow = authCard.children.find(node => node?.attrs?.class === 'pangolin-auth-actions');
@@ -67,16 +67,40 @@ assert.deepEqual(buttons(actionRow).map(node => node.children), ['重新认证',
 // An old pairing attempt must not leave a warning on an authenticated card,
 // even while talking to an older RPC backend which returns a stale state.
 for (const state of ['error', 'expired']) {
-	const authenticatedCard = JSON.stringify(renderAuth({ ...auth, state }, true));
+	const authenticatedCard = JSON.stringify(renderAuth({ ...auth, state }, { installed: true }));
 	assert.equal(authenticationPresentation({ ...auth, state }).text, '已认证');
 	assert.equal(authenticatedCard.includes('alert-message warning'), false, state);
 	assert.equal(authenticatedCard.includes('设备已认证。'), true, state);
-	const unauthenticatedCard = JSON.stringify(renderAuth({ state }, true));
+	const unauthenticatedCard = JSON.stringify(renderAuth({ state }, { installed: true }));
 	assert.equal(unauthenticatedCard.includes('alert-message warning'), true, state);
 }
 const reauth = { ...auth, state: 'pending', url: 'https://example.test/auth/login/device?code=EXAMPLE', code: 'EXAMPLE' };
 assert.equal(authenticationPresentation(reauth).text, '等待网页认证');
-assert.equal(JSON.stringify(renderAuth(reauth, true)).includes('打开链接认证'), true);
+assert.equal(JSON.stringify(renderAuth(reauth, { installed: true })).includes('打开链接认证'), true);
+
+for (const [status, expected] of [
+	[{ installed: true }, '勾选'],
+	[{ installed: true, enabled: true }, '未运行'],
+	[{ installed: true, enabled: true, running: true }, '正在连接'],
+	[{ installed: true, enabled: true, running: true, connected: true }, '服务已连接']
+]) {
+	assert.ok(authenticationHint(auth, status).includes(expected));
+	if (status.enabled) assert.ok(!authenticationHint(auth, status).includes('保存并应用'));
+}
+assert.ok(authenticationHint(reauth, {installed:true}).includes('重新认证'));
+assert.ok(authenticationHint({}, {installed:true}).includes('未认证'));
+assert.notEqual(authRenderKey(auth, {installed:true}), authRenderKey(auth, {installed:true, running:true}));
+assert.ok(authCard.children[0].children.some(node => node.children === '|'));
+assert.ok(authCard.children[0].children.some(node => node.attrs?.class === 'pangolin-auth-description'));
+let dismiss;
+let removed = false;
+context.ui.addNotification = () => ({
+	querySelector: () => ({ addEventListener: (event, handler) => { assert.equal(event, 'click'); dismiss = handler; } }),
+	remove: () => { removed = true; }
+});
+showNotification(null, 'done', 'info');
+dismiss();
+assert.equal(removed, true);
 
 // The originating tab must not use RPC or timers after opening the foreground
 // authentication page: browsers can suspend or throttle the hidden tab.

@@ -18,6 +18,11 @@ const callSyncNetwork = rpc.declare(Object.assign({ object: 'luci.pangolin', met
 const callGetAuth = rpc.declare(Object.assign({ object: 'luci.pangolin', method: 'get_auth_status' }, rpcOptions));
 const callAuthAction = rpc.declare(Object.assign({ object: 'luci.pangolin', method: 'auth_action', params: [ 'action' ] }, rpcOptions));
 let mapData;
+let latestStatus = {};
+
+function authRenderKey(auth, status) {
+	return JSON.stringify([ auth, !!status.installed, !!status.enabled, !!status.running, !!status.connected ]);
+}
 
 const fields = [
 	'role', 'client_auth', 'client_firewall', 'lan_zone', 'nikki_bypass', 'org', 'dns_enabled', 'dns_takeover', 'dns_port', 'dns_upstream', 'subnet_router', 'prefer_local_routes', 'endpoint', 'auth_mode', 'id', 'name', 'log_level', 'dns', 'mtu', 'port',
@@ -154,11 +159,19 @@ function updateStatus(node, status) {
 	if (expanded) node.querySelector('details').open = true;
 }
 
+function showNotification(title, content, ...classes) {
+	const notification = ui.addNotification(title, content, ...classes);
+	// Some LuCI themes fade alerts without firing transitionend. Remove our
+	// dismissed notification immediately so it cannot leave an invisible gap.
+	notification.querySelector('button')?.addEventListener('click', () => notification.remove());
+	return notification;
+}
+
 function notifyResult(result, successText) {
 	if (result?.success)
-		ui.addNotification(null, E('p', {}, successText), 'info');
+		showNotification(null, E('p', {}, successText), 'info');
 	else
-		ui.addNotification(null, E('p', {}, result?.error || _('操作失败。')), 'danger');
+		showNotification(null, E('p', {}, result?.error || _('操作失败。')), 'danger');
 	return result;
 }
 
@@ -181,14 +194,17 @@ function runAction(action) {
 		notifyResult(result, _('服务操作已完成。'));
 		return callGetStatus();
 	}).then(status => {
+		latestStatus = status;
 		const node = document.getElementById('pangolin-status');
 		if (node)
 			updateStatus(node, status);
 		const controls = document.getElementById('pangolin-controls');
 		if (controls) dom.content(controls, renderControls(status));
+		const authNode = document.getElementById('pangolin-auth');
+		if (authNode) return callGetAuth().then(auth => dom.content(authNode, renderAuth(auth, status)));
 	}).catch(error => {
 		ui.hideModal();
-		ui.addNotification(null, E('pre', { 'style': 'white-space:pre-wrap' }, errorMessage(error)), 'danger');
+		showNotification(null, E('pre', { 'style': 'white-space:pre-wrap' }, errorMessage(error)), 'danger');
 	});
 }
 
@@ -207,7 +223,7 @@ function runPackageAction(action) {
 		window.setTimeout(() => window.location.reload(), 700);
 	}).catch(error => {
 		ui.hideModal();
-		ui.addNotification(null, E('pre', { 'style': 'white-space:pre-wrap' }, errorMessage(error)), 'danger');
+		showNotification(null, E('pre', { 'style': 'white-space:pre-wrap' }, errorMessage(error)), 'danger');
 	});
 }
 
@@ -244,7 +260,7 @@ function renderControls(status) {
 				'hidden': status.role != 'site' ? true : null,
 				'click': ui.createHandlerFn(null, () => callSyncNetwork()
 					.then(result => notifyResult(result, _('OpenWrt 接口和防火墙配置已同步。')))
-					.catch(error => ui.addNotification(null, E('pre', { 'style': 'white-space:pre-wrap' }, errorMessage(error)), 'danger')))
+					.catch(error => showNotification(null, E('pre', { 'style': 'white-space:pre-wrap' }, errorMessage(error)), 'danger')))
 			}, _('同步站点接口'))
 		])
 	]);
@@ -257,7 +273,7 @@ function beginAuthentication(installed) {
 	const url = L.url('admin', 'vpn', 'pangolin', 'auth');
 	const authWindow = window.open(url, '_blank');
 	if (authWindow) authWindow.opener = null;
-	else ui.addNotification(null, E('p', {}, [ _('浏览器阻止了弹窗，请点击：'),
+	else showNotification(null, E('p', {}, [ _('浏览器阻止了弹窗，请点击：'),
 		E('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, _('打开设备认证页'))
 	]), 'info');
 }
@@ -272,7 +288,25 @@ function authenticationPresentation(auth) {
 	return { text: _('未认证'), color: '#6b7280' };
 }
 
-function renderAuth(auth, installed) {
+function authenticationHint(auth, status) {
+	const reauth = auth.authenticated || auth.logged_in;
+	if (!status.installed) return _('请先安装 Pangolin 客户端。');
+	if (auth.state == 'starting') return reauth ? _('正在获取新的配对信息，准备重新认证。') : _('正在获取设备配对信息，请稍候…');
+	if (auth.state == 'pending') return reauth ? _('正在重新认证，请在认证页面完成配对。') : _('请在认证页面完成设备配对。');
+	if (auth.authenticated) {
+		if (status.connected) return _('设备已认证，服务已连接。');
+		if (status.running) return _('设备已认证，服务正在连接。');
+		if (status.enabled) return _('设备已认证，服务已启用但未运行，请检查运行日志。');
+		return _('设备已认证。勾选“启用 Pangolin 服务”，再点击“保存并应用”启动。');
+	}
+	if (auth.logged_in) return _('账号已登录，请选择组织并完成客户端配置。');
+	if (auth.state == 'expired') return _('配对码已过期，请重新认证。');
+	if (auth.state == 'error') return _('认证未完成，请检查服务器连接后重新认证。');
+	return _('未认证。先保存 Pangolin 地址，再点击“认证”完成设备配对。');
+}
+
+function renderAuth(auth, status) {
+	const installed = status.installed;
 	const button = (label, action, style) => E('button', {
 		'class': 'btn cbi-button ' + (style || 'cbi-button-action'),
 		'disabled': !installed ? true : null,
@@ -281,25 +315,26 @@ function renderAuth(auth, installed) {
 			return callGetAuth();
 		}).then(next => {
 			const node = document.getElementById('pangolin-auth');
-			if (node) dom.content(node, renderAuth(next, installed));
-		}).catch(error => ui.addNotification(null, E('p', {}, errorMessage(error)), 'danger')))
+			if (node) dom.content(node, renderAuth(next, latestStatus));
+		}).catch(error => showNotification(null, E('p', {}, errorMessage(error)), 'danger')))
 	}, label);
 	const presentation = authenticationPresentation(auth);
 	let children = [
 		E('h3', { 'class': 'pangolin-auth-heading' }, [
 			E('span', {}, _('用户设备认证')),
-			E('span', { 'role': 'status', 'aria-live': 'polite' }, statusBadge(presentation.text, presentation.color))
+			E('span', { 'class': 'pangolin-auth-separator', 'aria-hidden': 'true' }, '|'),
+			E('span', { 'class': 'pangolin-auth-description', 'role': 'status', 'aria-live': 'polite' }, [
+				statusBadge(presentation.text, presentation.color),
+				E('span', {}, authenticationHint(auth, status))
+			])
 		]),
-		E('p', {}, auth.authenticated ? _('设备已认证。勾选“启用 Pangolin 服务”，再点击“保存并应用”启动。') : auth.logged_in ? _('账号已登录，请选择组织并完成客户端配置。') : _('先保存 Pangolin 地址，再点击认证；配对页面会自动打开，也可使用下方链接手动打开。')),
 		E('div', { 'class': 'pangolin-auth-actions' }, [
 			button(auth.authenticated || auth.logged_in ? _('重新认证') : _('认证'), 'start', 'cbi-button-positive'),
 			...(auth.authenticated || auth.logged_in ? [ button(_('退出认证并停止服务'), 'logout', 'cbi-button-negative') ] : [])
 		])
 	];
-	if (auth.state == 'starting')
-		children.push(E('p', { 'class': 'spinning' }, _('正在获取设备配对信息，请稍候…')));
 	if (auth.state == 'pending' && auth.url && auth.code) {
-		children.push(E('div', { 'style': 'display:flex;flex-wrap:wrap;gap:1rem;align-items:center;margin:1rem 0' }, [
+		children.push(E('div', { 'class': 'pangolin-auth-pairing' }, [
 			E('a', { 'class': 'btn cbi-button cbi-button-action', 'href': auth.url, 'target': '_blank', 'rel': 'noopener noreferrer' }, _('打开链接认证')),
 			E('span', {}, [ _('设备配对码：'), E('code', { 'style': 'font-size:1.3rem;letter-spacing:.15em;user-select:all' }, auth.code) ]),
 			button(_('取消'), 'cancel')
@@ -307,7 +342,7 @@ function renderAuth(auth, installed) {
 	} else if (!auth.authenticated && (auth.state == 'error' || auth.state == 'expired')) {
 		children.push(E('p', { 'class': 'alert-message warning' }, auth.state == 'expired' ? _('配对码已过期，请重新认证。') : _('认证未完成，请检查服务器连接后重试。')));
 	}
-	return E('div', { 'class': 'cbi-section' }, children);
+	return E('div', { 'class': 'cbi-section pangolin-auth-card' }, children);
 }
 
 function refreshLogs(lines) {
@@ -334,7 +369,7 @@ function renderLogs(logData) {
 				'click': ui.createHandlerFn(null, () => {
 					const text = document.getElementById('pangolin-log-output')?.textContent || '';
 					return navigator.clipboard.writeText(text).then(() =>
-						ui.addNotification(null, E('p', {}, _('日志已复制到剪贴板。')), 'info'));
+						showNotification(null, E('p', {}, _('日志已复制到剪贴板。')), 'info'));
 				})
 			}, _('复制'))
 		]),
@@ -541,9 +576,11 @@ return view.extend({
 	},
 
 	render: function(data) {
+		latestStatus = data[1];
 		const map = createForm(data[0]);
-		let previousAuth = JSON.stringify(data[3]);
+		let previousAuth = authRenderKey(data[3], data[1]);
 		poll.add(() => Promise.all([ callGetStatus(), callGetLogs(100), callGetAuth() ]).then(result => {
+			latestStatus = result[0];
 			const statusNode = document.getElementById('pangolin-status');
 			if (statusNode)
 				updateStatus(statusNode, result[0]);
@@ -551,9 +588,9 @@ return view.extend({
 			if (logNode)
 				logNode.textContent = result[1]?.logs || _('暂无 Pangolin 日志。');
 			const authNode = document.getElementById('pangolin-auth');
-			const nextAuth = JSON.stringify(result[2]);
+			const nextAuth = authRenderKey(result[2], result[0]);
 			if (authNode && previousAuth != nextAuth) {
-				dom.content(authNode, renderAuth(result[2], result[0].installed));
+				dom.content(authNode, renderAuth(result[2], result[0]));
 				previousAuth = nextAuth;
 			}
 		}));
@@ -564,8 +601,8 @@ return view.extend({
 			Promise.resolve(renderControls(data[1])),
 			Promise.resolve(renderLogs(data[2]))
 		]).then(nodes => E([], [
-			E('link', { 'rel': 'stylesheet', 'href': L.resource('view/pangolin/pangolin.css') }),
-			nodes[1], E('div', { 'id': 'pangolin-controls' }, nodes[2]), E('div', { 'id': 'pangolin-auth' }, renderAuth(data[3], data[1].installed)), nodes[0], nodes[3]
+			E('link', { 'rel': 'stylesheet', 'href': L.resource('view/pangolin/pangolin.css') + '?v=20261107-1' }),
+			nodes[1], E('div', { 'id': 'pangolin-controls' }, nodes[2]), E('div', { 'id': 'pangolin-auth' }, renderAuth(data[3], data[1])), nodes[0], nodes[3]
 		]));
 	},
 
@@ -581,7 +618,7 @@ return view.extend({
 				window.setTimeout(() => window.location.reload(), 700);
 		}).catch(error => {
 			ui.hideModal();
-		ui.addNotification(null, E('pre', { 'style': 'white-space:pre-wrap' }, errorMessage(error)), 'danger');
+		showNotification(null, E('pre', { 'style': 'white-space:pre-wrap' }, errorMessage(error)), 'danger');
 		});
 	},
 

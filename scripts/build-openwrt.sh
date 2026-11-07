@@ -97,8 +97,9 @@ sed -i \
 	.config
 
 feeds=(packages luci)
-# SDK feed definitions may separate fields with tabs instead of spaces.
-if grep -Eq '^src-[^[:space:]]+[[:space:]]+base[[:space:]]' feeds.conf.default; then
+# SDK base feeds include --root=package before the feed name. Accept both
+# that form and older definitions, with either spaces or tabs between fields.
+if grep -Eq '^src-[^[:space:]]+[[:space:]]+(--[^[:space:]]+[[:space:]]+)*base[[:space:]]' feeds.conf.default; then
 	feeds+=(base)
 fi
 for feed_name in "${feeds[@]}"; do

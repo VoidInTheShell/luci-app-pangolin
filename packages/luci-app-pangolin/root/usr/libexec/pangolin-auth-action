@@ -3,7 +3,7 @@ set -eu
 case "${1:-}" in
 	start)
 		[ -x /etc/init.d/pangolin-auth ] || { echo 'Install the Pangolin client first.' >&2; exit 1; }
-		/etc/init.d/pangolin-auth restart
+		/etc/init.d/pangolin-auth restart pair
 		;;
 	cancel)
 		[ ! -x /etc/init.d/pangolin-auth ] || /etc/init.d/pangolin-auth stop

@@ -4,7 +4,7 @@
 
 `dev` 从 `main` 创建，通过正常 merge 接收功能分支。推送到 `dev` 后 GitHub Actions 自动运行静态检查、回归、真实 OpenWrt rpcd 测试，使用官方 OpenWrt 25.12.5 和 24.10.2 SDK 分别构建 ARM64 与 x86_64 的 APK 和 IPK，验证签名和目标架构执行，再发布 Pre-release。
 
-每个开发 Release 使用独立 tag，绑定触发构建的确切 commit。开发版不设置 Latest。只有两个架构和检查全部成功才发布。PR 只验证，不读取正式签名 secret、不发版；PR 构建用临时测试签名。
+每个开发 Release 使用独立 tag，绑定触发构建的确切 commit。开发版不设置 Latest。只有全部五套平台构建和检查成功才发布，其中包括 24.10.2 的 `aarch64_cortex-a53`。PR 只验证，不读取正式签名 secret、不发版；PR 构建用临时测试签名。
 
 推送 `main` 只验证和构建。流程不会自动合并 dev、修改 main 或创建正式 tag。
 
@@ -42,7 +42,7 @@ git push origin v1.1.0
 
 ## 安装资产与签名
 
-每个 Release 提供四套平台产物（两个 OpenWrt 版本 × 两个架构）：保留四个 `tar.gz`，新增四个同内容 ZIP，并提供八个独立软件包（每个平台各有 pangolin-cli 和 luci-app-pangolin）。另附 `pangolin-public-key.pem`、覆盖全部附件的 `SHA256SUMS`，以及两套独立 IPK 的校验清单和签名。
+每个 Release 提供五套平台产物：25.12.5 的 `aarch64_generic`、`x86_64` APK，以及 24.10.2 的 `aarch64_generic`、`aarch64_cortex-a53`、`x86_64` IPK。每套均有 `tar.gz`、同内容 ZIP 和两个独立软件包（pangolin-cli、luci-app-pangolin）。另附 `pangolin-public-key.pem`、覆盖全部附件的 `SHA256SUMS`，以及三套独立 IPK 的校验清单和签名，共 28 个附件。
 
 完整包中包含匹配架构的 pangolin-cli、架构无关 LuCI 包、包校验和、manifest.json（包含 source SHA、架构、产品/上游版本）和 INSTALL.txt。APK 完整包包含签名 packages.adb 与 index.json；IPK 完整包包含 Packages、Packages.gz 和校验和的 OpenSSL 分离签名 packages-sha256sums.sig，使用同一 P-256 公钥验证，不作为 usign 签名 feed 发布。tar.gz 和 ZIP 内的软件包文件名及内容保持一致。
 

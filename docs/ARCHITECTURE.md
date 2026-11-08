@@ -107,14 +107,17 @@ addressing the previous generic **Operation failed** behavior.
 ## Packaging
 
 The R5C target is `rockchip/armv8` with package architecture
-`aarch64_generic`. `pangolin-cli` is architecture-specific;
-`luci-app-pangolin` is `noarch` and depends on it. One `apk add
-luci-app-pangolin` installs the complete app.
+`aarch64_generic`. OpenWrt 24.10.2 also supports `mediatek/filogic` with
+`aarch64_cortex-a53`; both firmware versions provide `x86_64` packages.
+`pangolin-cli` is architecture-specific. `luci-app-pangolin` is `noarch`
+for APK or `all` for IPK and declares its LuCI/runtime dependencies.
+Install both packages from the same release and platform for a complete client.
 
 Sources are version- and checksum-pinned. The CLI build replaces its Newt and
 OLM modules with exact local source archives before applying narrow security
 patches. Releases contain signed APK v3 packages and a signed `packages.adb`
-feed.
+feed, or IPKs authenticated by signed checksum lists. Every platform provides
+tar.gz, ZIP and standalone package assets.
 
 ## Deliberate non-goals
 

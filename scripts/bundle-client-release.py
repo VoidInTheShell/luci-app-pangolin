@@ -16,7 +16,9 @@ def bundle(source, output, tag, signing_key=None):
     firmware = manifest['openwrt']
     arch = manifest['architecture']
     version = manifest['product_version']
-    if firmware not in ('24.10.2', '25.12.5') or arch not in ('aarch64_generic', 'x86_64'):
+    architectures = {'24.10.2': ('aarch64_generic', 'aarch64_cortex-a53', 'x86_64'),
+                     '25.12.5': ('aarch64_generic', 'x86_64')}
+    if arch not in architectures.get(firmware, ()):
         raise ValueError('Unsupported release platform')
     if not re.fullmatch(r'v[0-9][A-Za-z0-9._-]*', tag) or not re.fullmatch(r'[0-9][A-Za-z0-9._~+-]*', version):
         raise ValueError('Invalid release tag or package version')

@@ -3,6 +3,8 @@ USE_PROCD=1
 START=96
 
 start_service() {
+	# Package installation and boot call start without an explicit pairing request.
+	[ "${1:-}" = pair ] || return 0
 	config_load pangolin
 	local endpoint
 	config_get endpoint main endpoint https://app.pangolin.net

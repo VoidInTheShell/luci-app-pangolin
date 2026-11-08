@@ -1,7 +1,8 @@
 # OpenWrt 24.10 IPK bundles
 
-The client build supports OpenWrt 24.10.2 for `x86_64` and
-`aarch64_generic` (ARM64), alongside the existing 25.12.5 APK builds.
+The client build supports OpenWrt 24.10.2 for `x86_64`,
+`aarch64_generic` (ARM64), and `aarch64_cortex-a53` (MediaTek Filogic),
+alongside the existing 25.12.5 APK builds.
 The CLI and LuCI package use the same sources and features on both releases.
 Firmware images remain specific to their original board targets.
 
@@ -16,6 +17,8 @@ export OPENWRT_VERSION=24.10.2
 export OPENWRT_TARGET=x86 OPENWRT_SUBTARGET=64 OPENWRT_PACKAGE_ARCH=x86_64
 # Or ARM64:
 # export OPENWRT_TARGET=rockchip OPENWRT_SUBTARGET=armv8 OPENWRT_PACKAGE_ARCH=aarch64_generic
+# Or MediaTek Filogic / Cortex-A53:
+# export OPENWRT_TARGET=mediatek OPENWRT_SUBTARGET=filogic OPENWRT_PACKAGE_ARCH=aarch64_cortex-a53
 bash scripts/build-openwrt.sh
 ```
 
@@ -32,6 +35,11 @@ contain the same complete installation files. Standalone IPKs are also available
 with firmware and architecture in their filenames; use both the client and LuCI
 IPKs from the same platform. Their matching `*-ipk-SHA256SUMS` and `.sig` are
 covered in [release installation](RELEASING.md#安装资产与签名).
+
+Match the package architecture exactly: a router listing only
+`aarch64_cortex-a53` will reject the `aarch64_generic` CLI IPK even though
+both are ARM64. Use the Cortex-A53 release instead of changing opkg's
+architecture configuration or forcing installation.
 
 For a complete bundle, verify the public key against a trusted copy before
 checking the signature on a computer:

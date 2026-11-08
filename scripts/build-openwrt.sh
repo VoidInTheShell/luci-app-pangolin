@@ -19,6 +19,9 @@ case "${openwrt_version}/${openwrt_target}/${openwrt_subtarget}/${package_arch}"
 	24.10.2/x86/64/x86_64)
 		package_format=ipk
 		sdk_sha256=d8f18e020d9546e465beedb9a558daf4ce00e1a29913f9f45c070bb823eb25b7 ;;
+	24.10.2/mediatek/filogic/aarch64_cortex-a53)
+		package_format=ipk
+		sdk_sha256=df288284baa46d37cbc71812130b72617333f886f5c93c11f0548e28f0bb8309 ;;
 	*) echo 'No checksum pin for the requested SDK/architecture.' >&2; exit 1 ;;
 esac
 if [ "$package_format" = ipk ]; then

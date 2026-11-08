@@ -35,6 +35,11 @@ EOF
 cat > /etc/init.d/pangolin-auth <<'EOF'
 #!/bin/sh
 set -eu
+if [ "$1" = restart ]; then
+	[ "${2:-}" = pair ]
+	printf '%s\n' auth-restart-pair >> "$TEST_AUTH_EVENTS"
+	exit 0
+fi
 printf '%s\n' auth-stop >> "$TEST_AUTH_EVENTS"
 rm -f /var/run/pangolin-auth/active /var/run/pangolin-auth/attempt /var/run/pangolin-auth/status.json
 EOF
@@ -64,6 +69,11 @@ check_started() {
 	[ "$(cat "$TEST_AUTH_EVENTS")" = "$(printf 'sync\nrestart:1\nstop-auth')" ]
 	[ "$(jsonfilter -i /var/run/pangolin-auth/status.json -e '@.State')" = authenticated ]
 }
+
+# Pairing must be explicitly requested through the init service.
+: > "$TEST_AUTH_EVENTS"
+/usr/libexec/pangolin-auth-action start
+[ "$(cat "$TEST_AUTH_EVENTS")" = auth-restart-pair ]
 
 # First installation, reauthentication while enabled, then logout + pairing.
 pair 0

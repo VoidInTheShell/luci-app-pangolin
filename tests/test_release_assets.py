@@ -49,8 +49,11 @@ class ReleaseAssetTests(unittest.TestCase):
     def test_all_platforms_keep_both_packages_and_identical_archive_contents(self):
         output = self.root / 'assets'
         emitted = []
-        for firmware in ('24.10.2', '25.12.5'):
-            for arch in ('aarch64_generic', 'x86_64'):
+        for firmware, architectures in (
+            ('24.10.2', ('aarch64_generic', 'aarch64_cortex-a53', 'x86_64')),
+            ('25.12.5', ('aarch64_generic', 'x86_64')),
+        ):
+            for arch in architectures:
                 source = self.source(firmware, arch)
                 assets = module.bundle(source, output, 'v1.1.0-dev.1.1', self.key)
                 self.assertTrue(all(re.fullmatch(r'[A-Za-z0-9._-]+', p.name) for p in assets))
@@ -74,8 +77,14 @@ class ReleaseAssetTests(unittest.TestCase):
                         self.assertEqual(hashlib.sha256((output / filename).read_bytes()).hexdigest(), digest)
                     subprocess.run(['openssl', 'dgst', '-sha256', '-verify', str(source / 'pangolin-public-key.pem'),
                                     '-signature', str(sums) + '.sig', str(sums)], check=True, capture_output=True)
-        self.assertEqual(len(emitted), 20)
-        self.assertEqual(len(set(p.name for p in emitted)), 20)
+        self.assertEqual(len(emitted), 26)
+        self.assertEqual(len(set(p.name for p in emitted)), 26)
+
+    def test_cortex_a53_is_only_supported_on_ipk_release(self):
+        source = self.source('25.12.5', 'aarch64_cortex-a53')
+        with self.assertRaisesRegex(ValueError, 'Unsupported release platform'):
+            module.bundle(source, self.root / 'assets', 'v1.1.0-dev.1.1')
+        self.assertFalse((self.root / 'assets').exists())
 
     def test_rejects_changed_package_before_export(self):
         source = self.source('25.12.5', 'x86_64')

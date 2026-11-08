@@ -53,17 +53,32 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        openwrt: ['25.12.5', '24.10.2']
-        arch: [aarch64_generic, x86_64]
         include:
-          - arch: aarch64_generic
+          - openwrt: '25.12.5'
+            arch: aarch64_generic
             target: rockchip
             subtarget: armv8
             platform: linux/arm64
-          - arch: x86_64
+          - openwrt: '25.12.5'
+            arch: x86_64
             target: x86
             subtarget: '64'
             platform: linux/amd64
+          - openwrt: '24.10.2'
+            arch: aarch64_generic
+            target: rockchip
+            subtarget: armv8
+            platform: linux/arm64
+          - openwrt: '24.10.2'
+            arch: x86_64
+            target: x86
+            subtarget: '64'
+            platform: linux/amd64
+          - openwrt: '24.10.2'
+            arch: aarch64_cortex-a53
+            target: mediatek
+            subtarget: filogic
+            platform: linux/arm64
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -85,14 +100,14 @@ jobs:
           go-version: '1.26.9'
           cache: false
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        if: matrix.arch == 'aarch64_generic'
+        if: matrix.platform == 'linux/arm64'
         with:
           platforms: arm64
       - name: Install SDK prerequisites
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends aria2 build-essential ca-certificates curl \
-            file gawk gettext jq libncurses-dev python3 python3-setuptools rsync unzip wget zstd
+            file gawk gettext jq libncurses-dev python3 python3-setuptools rsync squashfs-tools unzip wget zstd
       - name: Restore downloaded source archives
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -166,16 +181,17 @@ jobs:
           RELEASE_TAG: ${{ needs.checks.outputs.tag }}
           PRERELEASE: ${{ needs.checks.outputs.prerelease }}
         run: |
-          test "$(find release -name '*.tar.gz' | wc -l)" -eq 4
-          test "$(find release -name '*.zip' | wc -l)" -eq 4
+          test "$(find release -name '*.tar.gz' | wc -l)" -eq 5
+          test "$(find release -name '*.zip' | wc -l)" -eq 5
           test "$(find release -name '*.apk' | wc -l)" -eq 4
-          test "$(find release -name '*.ipk' | wc -l)" -eq 4
-          test "$(find release -name '*-ipk-SHA256SUMS' | wc -l)" -eq 2
-          test "$(find release -name '*-ipk-SHA256SUMS.sig' | wc -l)" -eq 2
+          test "$(find release -name '*.ipk' | wc -l)" -eq 6
+          test "$(find release -name '*-ipk-SHA256SUMS' | wc -l)" -eq 3
+          test "$(find release -name '*-ipk-SHA256SUMS.sig' | wc -l)" -eq 3
           cp keys/pangolin-public-key.pem release/
           (cd release && sha256sum *.tar.gz *.zip *.apk *.ipk *-ipk-SHA256SUMS *-ipk-SHA256SUMS.sig pangolin-public-key.pem > SHA256SUMS)
           cat > release-notes.md <<EOF
-          OpenWrt 25.12.5 (APK) and 24.10.2 (IPK), each for ARM64 (aarch64_generic) and x86_64.
+          OpenWrt 25.12.5 (APK): aarch64_generic and x86_64.
+          OpenWrt 24.10.2 (IPK): aarch64_generic, aarch64_cortex-a53 (MediaTek Filogic), and x86_64.
           Source: ${GITHUB_SHA}
           Bundled Pangolin CLI: 0.18.1; Newt: 1.18.1; OLM: 1.10.1.
 

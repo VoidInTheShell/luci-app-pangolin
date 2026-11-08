@@ -2,7 +2,7 @@
 
 在 OpenWrt 上安装、认证、配置和管理官方 Pangolin **客户端**，可选启用官方 Subnet Router。基于 [alexanderjlynn/openwrt-newt](https://github.com/alexanderjlynn/openwrt-newt) fork 开发，保留上游许可证与站点连接器兼容代码。
 
-支持 OpenWrt **25.12.5 / APK v3** 和 **24.10.2 / IPK**，每个版本提供 **ARM64 (`aarch64_generic`)** 和 **x86_64** 安装包，不支持 32 位。上游固定版本：Pangolin CLI 0.18.1、Newt 1.18.1、OLM 1.10.1。
+支持 OpenWrt **25.12.5 / APK v3** 和 **24.10.2 / IPK**，两个版本均提供 **ARM64 (`aarch64_generic`)** 和 **x86_64** 安装包；24.10.2 另提供 MediaTek Filogic 使用的 **`aarch64_cortex-a53`** IPK。不支持 32 位。上游固定版本：Pangolin CLI 0.18.1、Newt 1.18.1、OLM 1.10.1。
 
 ## 安装
 
